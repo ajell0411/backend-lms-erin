@@ -1,0 +1,6 @@
+.env
+*.exe
+*.db
+guru.json
+login.json
+tugas-baru.json
