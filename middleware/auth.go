@@ -20,13 +20,11 @@ func VerifyToken() gin.HandlerFunc {
 
 		secret := os.Getenv("JWT_SECRET")
 		if secret == "" {
-			// Jangan pernah lanjut kalau secret tidak diset di .env — ini kesalahan konfigurasi fatal
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "Konfigurasi server bermasalah"})
 			return
 		}
 
 		token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
-			// Wajib pakai HMAC (HS256), tolak algoritma lain
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, jwt.ErrSignatureInvalid
 			}
