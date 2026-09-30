@@ -3,14 +3,28 @@ package models
 import "time"
 
 type User struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	Nama      string    `json:"nama"`
-	Email     string    `gorm:"unique" json:"email"`
-	Password  string    `json:"-"`
-	Role      string    `json:"role"` // admin | admin_kurikulum | kepala_sekolah | guru | siswa
-	KelasID   *uint     `json:"kelasId,omitempty"`
-	Kelas     *Kelas    `json:"kelas,omitempty"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt"`
+	ID           uint        `gorm:"primaryKey" json:"id"`
+	Nama         string      `json:"nama"`
+	Username     *string     `gorm:"uniqueIndex" json:"username"`
+	Email        string      `gorm:"unique" json:"email"`
+	Password     string      `json:"-"`
+	Role         string      `json:"role"` // admin | admin_kurikulum | kepala_sekolah | guru | siswa
+	NIP          string      `json:"nip"`
+	NISN         *string     `gorm:"uniqueIndex" json:"nisn"`
+	JenisKelamin string      `json:"jenis_kelamin"`
+	TempatLahir  string      `json:"tempat_lahir"`
+	TanggalLahir *time.Time  `json:"tanggal_lahir"`
+	Alamat       string      `json:"alamat"`
+	Telepon      string      `json:"telepon"`
+	NamaWali     string      `json:"nama_wali"`
+	TeleponWali  string      `json:"telepon_wali"`
+	TahunMasuk   *int        `json:"tahun_masuk"`
+	Status       string      `gorm:"not null;default:aktif" json:"status"`
+	FotoURL      string      `json:"foto_url"`
+	KelasID      *uint       `json:"kelas_id,omitempty"`
+	Kelas        *Kelas      `json:"kelas,omitempty"`
+	Pelajaran    []Pelajaran `gorm:"many2many:pelajaran_guru;" json:"-"`
+	CreatedAt    time.Time   `gorm:"autoCreateTime" json:"createdAt"`
 }
 
 type Jurusan struct {
