@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -11,19 +13,68 @@ import (
 )
 
 type akunInput struct {
-	Nama     string `json:"nama"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Nama     string  `json:"nama"`
+	Username *string `json:"username"`
+	Email    string  `json:"email"`
+	Password string  `json:"password"`
+	Role     *string `json:"role"`
+	NIP      *string `json:"nip"`
+	Telepon  *string `json:"telepon"`
+	Status   *string `json:"status"`
+	FotoURL  *string `json:"foto_url"`
 }
 
 func akunJSON(u models.User) gin.H {
-	return gin.H{
-		"id":        u.ID,
-		"nama":      u.Nama,
-		"email":     u.Email,
-		"role":      u.Role,
-		"createdAt": u.CreatedAt,
+	username := ""
+	if u.Username != nil {
+		username = *u.Username
 	}
+	return gin.H{
+		"id":         u.ID,
+		"nama":       u.Nama,
+		"username":   username,
+		"email":      u.Email,
+		"role":       u.Role,
+		"nip":        u.NIP,
+		"telepon":    u.Telepon,
+		"status":     u.Status,
+		"foto_url":   u.FotoURL,
+		"created_at": u.CreatedAt,
+	}
+}
+
+func validAccountRole(role string) bool {
+	return role == "admin" || role == "admin_kurikulum" || role == "kepala_sekolah"
+}
+
+func normalizedUsername(username *string) *string {
+	if username == nil {
+		return nil
+	}
+	value := strings.TrimSpace(*username)
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func respondAccountWriteError(c *gin.Context, err error) {
+	message := strings.ToLower(err.Error())
+	if (strings.Contains(message, "username") || strings.Contains(message, "email") || strings.Contains(message, "nisn")) &&
+		(strings.Contains(message, "unique constraint") || strings.Contains(message, "duplicated key")) {
+		c.JSON(http.StatusConflict, gin.H{"error": "Username, email, atau NISN sudah digunakan"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": "Gagal menyimpan akun"})
+}
+
+func isCurrentUser(c *gin.Context, id uint) bool {
+	userID, exists := c.Get("userId")
+	return exists && fmt.Sprint(userID) == fmt.Sprint(id)
+}
+
+func validateAccountStatus(status string) bool {
+	return status == "aktif" || status == "nonaktif"
 }
 
 func CreateAkun(role string) gin.HandlerFunc {
@@ -37,6 +88,18 @@ func CreateAkun(role string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "nama, email, dan password wajib diisi"})
 			return
 		}
+		if in.Role != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Role akun ditentukan oleh endpoint"})
+			return
+		}
+		if in.Status != nil && !validateAccountStatus(*in.Status) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
+			return
+		}
+		status := "aktif"
+		if in.Status != nil {
+			status = *in.Status
+		}
 
 		hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -44,9 +107,22 @@ func CreateAkun(role string) gin.HandlerFunc {
 			return
 		}
 
-		user := models.User{Nama: in.Nama, Email: in.Email, Password: string(hashed), Role: role}
+		user := models.User{
+			Nama: in.Nama, Email: in.Email, Password: string(hashed), Role: role,
+			Status: status,
+		}
+		user.Username = normalizedUsername(in.Username)
+		if in.NIP != nil {
+			user.NIP = *in.NIP
+		}
+		if in.Telepon != nil {
+			user.Telepon = *in.Telepon
+		}
+		if in.FotoURL != nil {
+			user.FotoURL = *in.FotoURL
+		}
 		if err := config.DB.Create(&user).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			respondAccountWriteError(c, err)
 			return
 		}
 		c.JSON(http.StatusCreated, akunJSON(user))
@@ -92,6 +168,18 @@ func UpdateAkun(role string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Data tidak valid"})
 			return
 		}
+		if in.Status != nil && !validateAccountStatus(*in.Status) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
+			return
+		}
+		if in.Role != nil && !validAccountRole(*in.Role) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Role harus admin, admin_kurikulum, atau kepala_sekolah"})
+			return
+		}
+		if in.Role != nil && isCurrentUser(c, user.ID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin tidak dapat mengubah role akunnya sendiri"})
+			return
+		}
 
 		// Hanya field yang dikirim yang diubah
 		updates := map[string]interface{}{}
@@ -101,6 +189,12 @@ func UpdateAkun(role string) gin.HandlerFunc {
 		if in.Email != "" {
 			updates["email"] = in.Email
 		}
+		if in.Username != nil {
+			updates["username"] = normalizedUsername(in.Username)
+		}
+		if in.Role != nil {
+			updates["role"] = *in.Role
+		}
 		if in.Password != "" {
 			hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 			if err != nil {
@@ -109,10 +203,22 @@ func UpdateAkun(role string) gin.HandlerFunc {
 			}
 			updates["password"] = string(hashed)
 		}
+		if in.NIP != nil {
+			updates["nip"] = *in.NIP
+		}
+		if in.Telepon != nil {
+			updates["telepon"] = *in.Telepon
+		}
+		if in.Status != nil {
+			updates["status"] = *in.Status
+		}
+		if in.FotoURL != nil {
+			updates["foto_url"] = *in.FotoURL
+		}
 
 		if len(updates) > 0 {
 			if err := config.DB.Model(&user).Updates(updates).Error; err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				respondAccountWriteError(c, err)
 				return
 			}
 		}
