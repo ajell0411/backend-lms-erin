@@ -62,6 +62,7 @@ func main() {
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders: []string{"Authorization", "Content-Type"},
 	}))
+	r.Static("/uploads", "./uploads")
 
 	r.GET("/api/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{"message": "Backend Go jalan!"})
@@ -71,36 +72,37 @@ func main() {
 	{
 		// ===== Auth =====
 		api.POST("/auth/login", handlers.Login)
+		api.POST("/upload/foto", middleware.VerifyToken(), handlers.UploadFoto)
 
 		// ===== Manajemen akun: khusus admin =====
 		admin := api.Group("/admin")
-		admin.Use(middleware.VerifyToken(), middleware.RequireRole("admin"))
+		admin.Use(middleware.VerifyToken())
 		{
-			admin.POST("", handlers.CreateAdmin)
-			admin.GET("", handlers.ListAdmin)
-			admin.GET("/:id", handlers.GetAdminByID)
-			admin.PUT("/:id", handlers.UpdateAdmin)
-			admin.DELETE("/:id", handlers.DeleteAdmin)
+			admin.POST("", middleware.RequireRole("admin"), handlers.CreateAdmin)
+			admin.GET("", middleware.RequireRole(pantau...), handlers.ListAdmin)
+			admin.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAdminByID)
+			admin.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateAdmin)
+			admin.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteAdmin)
 		}
 
 		kurikulum := api.Group("/admin-kurikulum")
-		kurikulum.Use(middleware.VerifyToken(), middleware.RequireRole("admin"))
+		kurikulum.Use(middleware.VerifyToken())
 		{
-			kurikulum.POST("", handlers.CreateAkun("admin_kurikulum"))
-			kurikulum.GET("", handlers.ListAkun("admin_kurikulum"))
-			kurikulum.GET("/:id", handlers.GetAkunByID("admin_kurikulum"))
-			kurikulum.PUT("/:id", handlers.UpdateAkun("admin_kurikulum"))
-			kurikulum.DELETE("/:id", handlers.DeleteAkun("admin_kurikulum"))
+			kurikulum.POST("", middleware.RequireRole("admin"), handlers.CreateAkun("admin_kurikulum"))
+			kurikulum.GET("", middleware.RequireRole(pantau...), handlers.ListAkun("admin_kurikulum"))
+			kurikulum.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAkunByID("admin_kurikulum"))
+			kurikulum.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateAkun("admin_kurikulum"))
+			kurikulum.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteAkun("admin_kurikulum"))
 		}
 
 		kepsek := api.Group("/kepala-sekolah")
-		kepsek.Use(middleware.VerifyToken(), middleware.RequireRole("admin"))
+		kepsek.Use(middleware.VerifyToken())
 		{
-			kepsek.POST("", handlers.CreateAkun("kepala_sekolah"))
-			kepsek.GET("", handlers.ListAkun("kepala_sekolah"))
-			kepsek.GET("/:id", handlers.GetAkunByID("kepala_sekolah"))
-			kepsek.PUT("/:id", handlers.UpdateAkun("kepala_sekolah"))
-			kepsek.DELETE("/:id", handlers.DeleteAkun("kepala_sekolah"))
+			kepsek.POST("", middleware.RequireRole("admin"), handlers.CreateAkun("kepala_sekolah"))
+			kepsek.GET("", middleware.RequireRole(pantau...), handlers.ListAkun("kepala_sekolah"))
+			kepsek.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAkunByID("kepala_sekolah"))
+			kepsek.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateAkun("kepala_sekolah"))
+			kepsek.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteAkun("kepala_sekolah"))
 		}
 
 		// Guru dan siswa: admin kelola, role pemantau boleh baca
