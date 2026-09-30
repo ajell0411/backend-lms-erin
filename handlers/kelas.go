@@ -38,8 +38,25 @@ func CreateKelas(c *gin.Context) {
 
 func ListKelas(c *gin.Context) {
 	var kelas []models.Kelas
-	config.DB.Preload("Jurusan").Find(&kelas)
-	c.JSON(http.StatusOK, kelas)
+	query := config.DB.Preload("Jurusan")
+	if jurusanID := c.Query("jurusan_id"); jurusanID != "" {
+		query = query.Where("jurusan_id = ?", jurusanID)
+	}
+	if err := query.Order("tingkat, nama").Find(&kelas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat data kelas"})
+		return
+	}
+	response := make([]gin.H, 0, len(kelas))
+	for _, item := range kelas {
+		response = append(response, gin.H{
+			"id":         item.ID,
+			"nama":       item.Nama,
+			"tingkat":    item.Tingkat,
+			"jurusan_id": item.JurusanID,
+			"jurusan":    item.Jurusan,
+		})
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func GetKelasByID(c *gin.Context) {
