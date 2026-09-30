@@ -11,9 +11,15 @@ import (
 )
 
 type adminInput struct {
-	Nama     string `json:"nama"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Nama     string  `json:"nama"`
+	Username *string `json:"username"`
+	Email    string  `json:"email"`
+	Password string  `json:"password"`
+	Role     *string `json:"role"`
+	NIP      *string `json:"nip"`
+	Telepon  *string `json:"telepon"`
+	Status   *string `json:"status"`
+	FotoURL  *string `json:"foto_url"`
 }
 
 func CreateAdmin(c *gin.Context) {
@@ -21,6 +27,19 @@ func CreateAdmin(c *gin.Context) {
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	if input.Nama == "" || input.Email == "" || input.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "nama, email, dan password wajib diisi"})
+		return
+	}
+	if input.Status != nil && !validateAccountStatus(*input.Status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
+		return
+	}
+	status := "aktif"
+	if input.Status != nil {
+		status = *input.Status
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -34,19 +53,37 @@ func CreateAdmin(c *gin.Context) {
 		Email:    input.Email,
 		Password: string(hashed),
 		Role:     "admin",
+		Status:   status,
+	}
+	user.Username = normalizedUsername(input.Username)
+	if input.NIP != nil {
+		user.NIP = *input.NIP
+	}
+	if input.Telepon != nil {
+		user.Telepon = *input.Telepon
+	}
+	if input.FotoURL != nil {
+		user.FotoURL = *input.FotoURL
 	}
 
 	if err := config.DB.Create(&user).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondAccountWriteError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, user)
+	c.JSON(http.StatusCreated, akunJSON(user))
 }
 
 func ListAdmin(c *gin.Context) {
 	var users []models.User
-	config.DB.Where("role = ?", "admin").Find(&users)
-	c.JSON(http.StatusOK, users)
+	if err := config.DB.Where("role = ?", "admin").Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(users))
+	for _, user := range users {
+		out = append(out, akunJSON(user))
+	}
+	c.JSON(http.StatusOK, out)
 }
 
 func GetAdminByID(c *gin.Context) {
@@ -55,7 +92,7 @@ func GetAdminByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Tidak ditemukan"})
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, akunJSON(user))
 }
 
 func UpdateAdmin(c *gin.Context) {
@@ -70,9 +107,32 @@ func UpdateAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if input.Role != nil && !validAccountRole(*input.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Role harus admin, admin_kurikulum, atau kepala_sekolah"})
+		return
+	}
+	if input.Role != nil && isCurrentUser(c, user.ID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Admin tidak dapat mengubah role akunnya sendiri"})
+		return
+	}
+	if input.Status != nil && !validateAccountStatus(*input.Status) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
+		return
+	}
 
-	user.Nama = input.Nama
-	user.Email = input.Email
+	updates := map[string]interface{}{}
+	if input.Nama != "" {
+		updates["nama"] = input.Nama
+	}
+	if input.Email != "" {
+		updates["email"] = input.Email
+	}
+	if input.Username != nil {
+		updates["username"] = normalizedUsername(input.Username)
+	}
+	if input.Role != nil {
+		updates["role"] = *input.Role
+	}
 
 	if input.Password != "" {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -80,11 +140,32 @@ func UpdateAdmin(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal hash password"})
 			return
 		}
-		user.Password = string(hashed)
+		updates["password"] = string(hashed)
+	}
+	if input.NIP != nil {
+		updates["nip"] = *input.NIP
+	}
+	if input.Telepon != nil {
+		updates["telepon"] = *input.Telepon
+	}
+	if input.Status != nil {
+		updates["status"] = *input.Status
+	}
+	if input.FotoURL != nil {
+		updates["foto_url"] = *input.FotoURL
 	}
 
-	config.DB.Save(&user)
-	c.JSON(http.StatusOK, user)
+	if len(updates) > 0 {
+		if err := config.DB.Model(&user).Updates(updates).Error; err != nil {
+			respondAccountWriteError(c, err)
+			return
+		}
+	}
+	if err := config.DB.First(&user, user.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, akunJSON(user))
 }
 
 func DeleteAdmin(c *gin.Context) {
