@@ -152,7 +152,7 @@ func UpdateAdmin(c *gin.Context) {
 		updates["password"] = string(hashed)
 	}
 	if input.NIP != nil {
-		updates["nip"] = *input.NIP
+		updates["NIP"] = *input.NIP
 	}
 	if input.Telepon != nil {
 		updates["telepon"] = *input.Telepon
