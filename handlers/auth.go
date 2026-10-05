@@ -15,7 +15,7 @@ import (
 )
 
 type loginInput struct {
-	Email    string `json:"email"`
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
@@ -29,19 +29,19 @@ func Login(c *gin.Context) {
 
 	var input loginInput
 	if err := c.ShouldBindJSON(&input); err != nil ||
-		strings.TrimSpace(input.Email) == "" || input.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Email/username dan password wajib diisi"})
+		strings.TrimSpace(input.Username) == "" || input.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Username dan password wajib diisi"})
 		return
 	}
 
 	var user models.User
-	if err := config.DB.Where("email = ?", strings.TrimSpace(input.Email)).First(&user).Error; err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Email atau password salah"})
+	if err := config.DB.Where("username = ?", strings.TrimSpace(input.Username)).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Username atau password salah"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Password)); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Email atau password salah"})
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "Username atau password salah"})
 		return
 	}
 
