@@ -15,22 +15,22 @@ import (
 )
 
 type siswaInput struct {
-	Nama         *string `json:"nama"`
-	Username     *string `json:"username"`
-	Email        *string `json:"email"`
-	Password     *string `json:"password"`
-	NISN         *string `json:"nisn"`
-	JenisKelamin *string `json:"jenis_kelamin"`
-	TempatLahir  *string `json:"tempat_lahir"`
-	TanggalLahir *string `json:"tanggal_lahir"`
-	Alamat       *string `json:"alamat"`
-	Telepon      *string `json:"telepon"`
-	NamaWali     *string `json:"nama_wali"`
-	TeleponWali  *string `json:"telepon_wali"`
-	TahunMasuk   *int    `json:"tahun_masuk"`
-	Status       *string `json:"status"`
-	FotoURL      *string `json:"foto_url"`
-	KelasID      *uint   `json:"kelas_id"`
+	Nama         *string      `json:"nama"`
+	Username     *string      `json:"username"`
+	Email        *string      `json:"email"`
+	Password     *string      `json:"password"`
+	NISN         *string      `json:"nisn"`
+	JenisKelamin *string      `json:"jenis_kelamin"`
+	TempatLahir  *string      `json:"tempat_lahir"`
+	TanggalLahir *string      `json:"tanggal_lahir"`
+	Alamat       *string      `json:"alamat"`
+	Telepon      *string      `json:"telepon"`
+	NamaWali     *string      `json:"nama_wali"`
+	TeleponWali  *string      `json:"telepon_wali"`
+	TahunMasuk   *int         `json:"tahun_masuk"`
+	Status       *string      `json:"status"`
+	FotoURL      *string      `json:"foto_url"`
+	KelasID      optionalUint `json:"kelas_id"`
 }
 
 func siswaJSON(user models.User) gin.H {
@@ -74,6 +74,10 @@ func validateSiswaInput(c *gin.Context, input siswaInput, creating bool) bool {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama, username, email, password, dan status wajib diisi"})
 		return false
 	}
+	if !validNumericIdentifier(input.NISN) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "NISN hanya boleh berisi angka"})
+		return false
+	}
 	if input.Status != nil && *input.Status != "aktif" && *input.Status != "nonaktif" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Status harus aktif atau nonaktif"})
 		return false
@@ -88,9 +92,9 @@ func validateSiswaInput(c *gin.Context, input siswaInput, creating bool) bool {
 			return false
 		}
 	}
-	if input.KelasID != nil {
+	if input.KelasID.Set && input.KelasID.Value != nil {
 		var count int64
-		if err := config.DB.Model(&models.Kelas{}).Where("id = ?", *input.KelasID).Count(&count).Error; err != nil || count == 0 {
+		if err := config.DB.Model(&models.Kelas{}).Where("id = ?", *input.KelasID.Value).Count(&count).Error; err != nil || count == 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Kelas tidak ditemukan"})
 			return false
 		}
@@ -144,7 +148,7 @@ func CreateSiswa(c *gin.Context) {
 		Alamat: normalizeOptional(input.Alamat), Telepon: normalizeOptional(input.Telepon),
 		NamaWali: normalizeOptional(input.NamaWali), TeleponWali: normalizeOptional(input.TeleponWali),
 		TahunMasuk: input.TahunMasuk, Status: normalizeOptional(input.Status), FotoURL: normalizeOptional(input.FotoURL),
-		KelasID: input.KelasID,
+		KelasID: input.KelasID.Value,
 	}
 	if input.NISN != nil && strings.TrimSpace(*input.NISN) != "" {
 		value := strings.TrimSpace(*input.NISN)
@@ -282,8 +286,8 @@ func UpdateSiswa(c *gin.Context) {
 	if input.FotoURL != nil {
 		updates["foto_url"] = normalizeOptional(input.FotoURL)
 	}
-	if input.KelasID != nil {
-		updates["kelas_id"] = *input.KelasID
+	if input.KelasID.Set {
+		updates["kelas_id"] = input.KelasID.Value
 	}
 	if len(updates) > 0 {
 		if err := config.DB.Model(&user).Updates(updates).Error; err != nil {
