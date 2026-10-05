@@ -80,6 +80,12 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	login := apiRequest(t, router, http.MethodPost, "/auth/login", map[string]any{"email": "admin", "password": "admin123"}, "")
 	assertStatus(t, login, http.StatusOK)
 	adminToken := decodeObject(t, login)["token"].(string)
+	self := decodeObject(t, apiRequest(t, router, http.MethodGet, "/profile", nil, adminToken))
+	selfID := int(self["id"].(float64))
+	for _, name := range []string{"Admin Edit One", "Admin Edit Two"} {
+		update := apiRequest(t, router, http.MethodPut, "/admin/"+jsonNumber(selfID), map[string]any{"nama": name, "email": "admin", "username": "admin", "role": "admin"}, adminToken)
+		assertStatus(t, update, http.StatusOK)
+	}
 
 	accountRoutes := []struct{ role, path string }{
 		{"admin", "/admin"}, {"admin_kurikulum", "/admin-kurikulum"}, {"kepala_sekolah", "/kepala-sekolah"},
@@ -142,12 +148,20 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/pelajaran/"+jsonNumber(subjectID)+"/guru", nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"nama": "Updated Teacher"}, adminToken), http.StatusOK)
 
-	student := apiRequest(t, router, http.MethodPost, "/siswa", map[string]any{"nama": "Test Student", "username": "test_student", "email": "student@example.test", "password": "crud-pass-123", "status": "aktif", "nisn": "T-NISN", "kelas_id": classID}, adminToken)
+	student := apiRequest(t, router, http.MethodPost, "/siswa", map[string]any{"nama": "Test Student", "username": "test_student", "email": "student@example.test", "password": "crud-pass-123", "status": "aktif", "nisn": "1234567890", "kelas_id": classID}, adminToken)
 	assertStatus(t, student, http.StatusCreated)
 	studentID := int(decodeObject(t, student)["id"].(float64))
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/siswa?jurusan_id="+jsonNumber(majorID)+"&kelas_id="+jsonNumber(classID)+"&search=Test+Student", nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/siswa/"+jsonNumber(studentID), nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/siswa/"+jsonNumber(studentID), map[string]any{"nama": "Updated Student", "status": "nonaktif"}, adminToken), http.StatusOK)
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/siswa/"+jsonNumber(studentID), map[string]any{"nama": "Updated Student Again"}, adminToken), http.StatusOK)
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/siswa/"+jsonNumber(studentID), map[string]any{"nisn": "123ABC"}, adminToken), http.StatusBadRequest)
+	unassigned := apiRequest(t, router, http.MethodPut, "/siswa/"+jsonNumber(studentID), map[string]any{"kelas_id": nil}, adminToken)
+	assertStatus(t, unassigned, http.StatusOK)
+	if decodeObject(t, apiRequest(t, router, http.MethodGet, "/siswa/"+jsonNumber(studentID), nil, adminToken))["kelas_id"] != nil {
+		t.Fatal("student class assignment was not cleared")
+	}
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/siswa/"+jsonNumber(studentID), map[string]any{"kelas_id": classID}, adminToken), http.StatusOK)
 	studentList := apiRequest(t, router, http.MethodGet, "/siswa?jurusan_id="+jsonNumber(majorID)+"&kelas_id="+jsonNumber(classID)+"&status=nonaktif&search=Updated+Student", nil, adminToken)
 	assertStatus(t, studentList, http.StatusOK)
 	assertListHasID(t, studentList, studentID)
