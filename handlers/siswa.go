@@ -246,9 +246,9 @@ func UpdateSiswa(c *gin.Context) {
 	if input.NISN != nil {
 		value := strings.TrimSpace(*input.NISN)
 		if value == "" {
-			updates["nisn"] = nil
+		updates["NISN"] = nil
 		} else {
-			updates["nisn"] = value
+			updates["NISN"] = value
 		}
 	}
 	if input.JenisKelamin != nil {
