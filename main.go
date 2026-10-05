@@ -28,8 +28,10 @@ func seedAdmin() {
 		return
 	}
 
+	username := "admin"
 	admin := models.User{
 		Nama:     "Admin E-CLASS",
+		Username: &username,
 		Email:    "admin",
 		Password: string(hashed),
 		Role:     "admin",
