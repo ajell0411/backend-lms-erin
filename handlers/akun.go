@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -77,6 +78,12 @@ func validateAccountStatus(status string) bool {
 	return status == "aktif" || status == "nonaktif"
 }
 
+var numericIdentifier = regexp.MustCompile(`^[0-9]+$`)
+
+func validNumericIdentifier(value *string) bool {
+	return value == nil || strings.TrimSpace(*value) == "" || numericIdentifier.MatchString(strings.TrimSpace(*value))
+}
+
 func CreateAkun(role string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var in akunInput
@@ -94,6 +101,10 @@ func CreateAkun(role string) gin.HandlerFunc {
 		}
 		if in.Status != nil && !validateAccountStatus(*in.Status) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
+			return
+		}
+		if !validNumericIdentifier(in.NIP) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 			return
 		}
 		status := "aktif"
@@ -173,11 +184,15 @@ func UpdateAkun(role string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
 			return
 		}
+		if !validNumericIdentifier(in.NIP) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
+			return
+		}
 		if in.Role != nil && !validAccountRole(*in.Role) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Role harus admin, admin_kurikulum, atau kepala_sekolah"})
 			return
 		}
-		if in.Role != nil && isCurrentUser(c, user.ID) {
+		if in.Role != nil && *in.Role != user.Role && isCurrentUser(c, user.ID) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "Admin tidak dapat mengubah role akunnya sendiri"})
 			return
 		}
