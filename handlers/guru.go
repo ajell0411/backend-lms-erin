@@ -112,6 +112,10 @@ func validateGuruInput(c *gin.Context, input guruInput, creating bool) bool {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama, username, email, password, dan status wajib diisi"})
 		return false
 	}
+	if !validNumericIdentifier(input.NIP) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
+		return false
+	}
 	if input.Status != nil && *input.Status != "aktif" && *input.Status != "nonaktif" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Status harus aktif atau nonaktif"})
 		return false
