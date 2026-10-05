@@ -37,6 +37,10 @@ func CreateAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
 		return
 	}
+	if !validNumericIdentifier(input.NIP) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
+		return
+	}
 	status := "aktif"
 	if input.Status != nil {
 		status = *input.Status
@@ -112,12 +116,16 @@ func UpdateAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Role harus admin, admin_kurikulum, atau kepala_sekolah"})
 		return
 	}
-	if input.Role != nil && isCurrentUser(c, user.ID) {
+	if input.Role != nil && *input.Role != user.Role && isCurrentUser(c, user.ID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Admin tidak dapat mengubah role akunnya sendiri"})
 		return
 	}
 	if input.Status != nil && !validateAccountStatus(*input.Status) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
+		return
+	}
+	if !validNumericIdentifier(input.NIP) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 		return
 	}
 
