@@ -220,7 +220,7 @@ func UpdateAkun(role string) gin.HandlerFunc {
 			updates["password"] = string(hashed)
 		}
 		if in.NIP != nil {
-			updates["nip"] = *in.NIP
+			updates["NIP"] = *in.NIP
 		}
 		if in.Telepon != nil {
 			updates["telepon"] = *in.Telepon
