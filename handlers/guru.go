@@ -250,7 +250,7 @@ func UpdateGuru(c *gin.Context) {
 		updates["password"] = string(hashed)
 	}
 	if input.NIP != nil {
-		updates["nip"] = normalizeOptional(input.NIP)
+		updates["NIP"] = normalizeOptional(input.NIP)
 	}
 	if input.JenisKelamin != nil {
 		updates["jenis_kelamin"] = *input.JenisKelamin
