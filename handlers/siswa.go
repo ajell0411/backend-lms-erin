@@ -158,6 +158,7 @@ func CreateSiswa(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat siswa"})
 		return
 	}
+	recordAktivitas(c, "menambahkan", "murid", user.Nama)
 	c.JSON(http.StatusCreated, siswaJSON(user))
 }
 
@@ -178,7 +179,7 @@ func ListSiswa(c *gin.Context) {
 	}
 	if search != "" {
 		like := "%" + search + "%"
-		query = query.Where("users.nama LIKE ? OR users.nisn LIKE ?", like, like)
+		query = query.Where("(users.nama LIKE ? OR users.nisn LIKE ?)", like, like)
 	}
 	var users []models.User
 	if err := query.Preload("Kelas.Jurusan").Order("users.id").Find(&users).Error; err != nil {
@@ -294,10 +295,16 @@ func UpdateSiswa(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat siswa"})
 		return
 	}
+	recordAktivitas(c, "mengubah", "murid", user.Nama)
 	c.JSON(http.StatusOK, siswaJSON(user))
 }
 
 func DeleteSiswa(c *gin.Context) {
+	var user models.User
+	if err := config.DB.Where("role = ?", "siswa").First(&user, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Siswa tidak ditemukan"})
+		return
+	}
 	result := config.DB.Where("role = ?", "siswa").Delete(&models.User{}, c.Param("id"))
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus siswa"})
@@ -307,5 +314,6 @@ func DeleteSiswa(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Siswa tidak ditemukan"})
 		return
 	}
+	recordAktivitas(c, "menghapus", "murid", user.Nama)
 	c.JSON(http.StatusOK, gin.H{"message": "Berhasil dihapus"})
 }

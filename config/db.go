@@ -2,6 +2,7 @@ package config
 
 import (
 	"log"
+	"os"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -12,7 +13,11 @@ import (
 var DB *gorm.DB
 
 func ConnectDB() {
-	db, err := gorm.Open(sqlite.Open("eclass.db"), &gorm.Config{})
+	databasePath := os.Getenv("DATABASE_PATH")
+	if databasePath == "" {
+		databasePath = "eclass.db"
+	}
+	db, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{})
 	if err != nil {
 		log.Fatal("Gagal konek database:", err)
 	}
@@ -27,6 +32,7 @@ func ConnectDB() {
 		&models.PengumpulanTugas{},
 		&models.Kuis{},
 		&models.PengumpulanKuis{},
+		&models.Aktivitas{},
 	)
 	if err != nil {
 		log.Fatal("Gagal migrasi:", err)

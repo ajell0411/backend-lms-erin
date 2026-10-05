@@ -25,7 +25,7 @@ type adminInput struct {
 func CreateAdmin(c *gin.Context) {
 	var input adminInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Data akun admin tidak valid"})
 		return
 	}
 
@@ -70,13 +70,14 @@ func CreateAdmin(c *gin.Context) {
 		respondAccountWriteError(c, err)
 		return
 	}
+	recordAktivitas(c, "menambahkan", aktivitasJenisRole(user.Role), user.Nama)
 	c.JSON(http.StatusCreated, akunJSON(user))
 }
 
 func ListAdmin(c *gin.Context) {
 	var users []models.User
 	if err := config.DB.Where("role = ?", "admin").Find(&users).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat daftar admin"})
 		return
 	}
 	out := make([]gin.H, 0, len(users))
@@ -104,7 +105,7 @@ func UpdateAdmin(c *gin.Context) {
 
 	var input adminInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Data akun admin tidak valid"})
 		return
 	}
 	if input.Role != nil && !validAccountRole(*input.Role) {
@@ -162,16 +163,23 @@ func UpdateAdmin(c *gin.Context) {
 		}
 	}
 	if err := config.DB.First(&user, user.ID).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat akun admin yang diperbarui"})
 		return
 	}
+	recordAktivitas(c, "mengubah", aktivitasJenisRole(user.Role), user.Nama)
 	c.JSON(http.StatusOK, akunJSON(user))
 }
 
 func DeleteAdmin(c *gin.Context) {
-	if err := config.DB.Where("role = ?", "admin").Delete(&models.User{}, c.Param("id")).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	var user models.User
+	if err := config.DB.Where("role = ?", "admin").First(&user, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Admin tidak ditemukan"})
 		return
 	}
+	if err := config.DB.Delete(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus admin"})
+		return
+	}
+	recordAktivitas(c, "menghapus", aktivitasJenisRole(user.Role), user.Nama)
 	c.JSON(http.StatusOK, gin.H{"message": "Berhasil dihapus"})
 }

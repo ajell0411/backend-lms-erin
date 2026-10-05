@@ -28,9 +28,10 @@ type User struct {
 }
 
 type Jurusan struct {
-	ID   uint   `gorm:"primaryKey" json:"id"`
-	Nama string `json:"nama"`
-	Kode string `json:"kode"`
+	ID            uint   `gorm:"primaryKey" json:"id"`
+	Nama          string `json:"nama"`
+	Kode          string `gorm:"uniqueIndex" json:"kode"`
+	KepalaJurusan string `json:"kepala_jurusan"`
 }
 
 type Kelas struct {
@@ -40,7 +41,7 @@ type Kelas struct {
 	JurusanID   uint    `gorm:"not null" json:"jurusanId"`
 	Jurusan     Jurusan `json:"jurusan"`
 	WaliKelasID *uint   `json:"waliKelasId,omitempty"`
-	WaliKelas   *User   `json:"waliKelas,omitempty"`
+	WaliKelas   *User   `gorm:"foreignKey:WaliKelasID;references:ID" json:"waliKelas,omitempty"`
 }
 
 type Pelajaran struct {
@@ -48,6 +49,15 @@ type Pelajaran struct {
 	Nama string `json:"nama"`
 	Kode string `json:"kode"`
 	Guru []User `gorm:"many2many:pelajaran_guru;" json:"guru"`
+}
+
+type Aktivitas struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	AktorNama  string    `json:"aktor_nama"`
+	Aksi       string    `json:"aksi"`
+	ObjekJenis string    `json:"objek_jenis"`
+	ObjekNama  string    `json:"objek_nama"`
+	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 type Materi struct {

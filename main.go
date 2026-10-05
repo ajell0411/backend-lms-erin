@@ -29,7 +29,7 @@ func seedAdmin() {
 	}
 
 	admin := models.User{
-		Nama:     "Super Admin",
+		Nama:     "Admin E-CLASS",
 		Email:    "admin",
 		Password: string(hashed),
 		Role:     "admin",
@@ -39,11 +39,7 @@ func seedAdmin() {
 	}
 }
 
-func main() {
-	godotenv.Load()
-	config.ConnectDB()
-	seedAdmin()
-
+func setupRouter() *gin.Engine {
 	// Kelompok role yang dipakai berulang
 	pantau := []string{"admin", "admin_kurikulum", "kepala_sekolah"}
 	bacaMaster := []string{"admin", "admin_kurikulum", "kepala_sekolah", "guru"}   // tanpa siswa
@@ -72,90 +68,100 @@ func main() {
 	{
 		// ===== Auth =====
 		api.POST("/auth/login", handlers.Login)
+		profile := api.Group("/profile")
+		profile.Use(middleware.VerifyToken())
+		{
+			profile.GET("", handlers.GetProfile)
+			profile.PUT("", handlers.UpdateProfile)
+			profile.PUT("/password", handlers.UpdateProfilePassword)
+		}
 		api.POST("/upload/foto", middleware.VerifyToken(), handlers.UploadFoto)
 
 		// ===== Manajemen akun: khusus admin =====
 		admin := api.Group("/admin")
 		admin.Use(middleware.VerifyToken())
 		{
-			admin.POST("", middleware.RequireRole("admin"), handlers.CreateAdmin)
+			admin.POST("", middleware.RequireAdminWrite(), handlers.CreateAdmin)
 			admin.GET("", middleware.RequireRole(pantau...), handlers.ListAdmin)
 			admin.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAdminByID)
-			admin.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateAdmin)
-			admin.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteAdmin)
+			admin.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateAdmin)
+			admin.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteAdmin)
 		}
 
 		kurikulum := api.Group("/admin-kurikulum")
 		kurikulum.Use(middleware.VerifyToken())
 		{
-			kurikulum.POST("", middleware.RequireRole("admin"), handlers.CreateAkun("admin_kurikulum"))
+			kurikulum.POST("", middleware.RequireAdminWrite(), handlers.CreateAkun("admin_kurikulum"))
 			kurikulum.GET("", middleware.RequireRole(pantau...), handlers.ListAkun("admin_kurikulum"))
 			kurikulum.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAkunByID("admin_kurikulum"))
-			kurikulum.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateAkun("admin_kurikulum"))
-			kurikulum.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteAkun("admin_kurikulum"))
+			kurikulum.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateAkun("admin_kurikulum"))
+			kurikulum.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteAkun("admin_kurikulum"))
 		}
 
 		kepsek := api.Group("/kepala-sekolah")
 		kepsek.Use(middleware.VerifyToken())
 		{
-			kepsek.POST("", middleware.RequireRole("admin"), handlers.CreateAkun("kepala_sekolah"))
+			kepsek.POST("", middleware.RequireAdminWrite(), handlers.CreateAkun("kepala_sekolah"))
 			kepsek.GET("", middleware.RequireRole(pantau...), handlers.ListAkun("kepala_sekolah"))
 			kepsek.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAkunByID("kepala_sekolah"))
-			kepsek.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateAkun("kepala_sekolah"))
-			kepsek.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteAkun("kepala_sekolah"))
+			kepsek.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateAkun("kepala_sekolah"))
+			kepsek.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteAkun("kepala_sekolah"))
 		}
 
 		// Guru dan siswa: admin kelola, role pemantau boleh baca
 		guru := api.Group("/guru")
 		guru.Use(middleware.VerifyToken())
 		{
-			guru.POST("", middleware.RequireRole("admin"), handlers.CreateGuru)
+			guru.POST("", middleware.RequireAdminWrite(), handlers.CreateGuru)
 			guru.GET("", middleware.RequireRole(pantau...), handlers.ListGuru)
 			guru.GET("/:id", middleware.RequireRole(pantau...), handlers.GetGuruByID)
-			guru.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateGuru)
-			guru.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteGuru)
+			guru.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateGuru)
+			guru.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteGuru)
 		}
 
 		siswa := api.Group("/siswa")
 		siswa.Use(middleware.VerifyToken())
 		{
-			siswa.POST("", middleware.RequireRole("admin"), handlers.CreateSiswa)
+			siswa.POST("", middleware.RequireAdminWrite(), handlers.CreateSiswa)
 			siswa.GET("", middleware.RequireRole(pantau...), handlers.ListSiswa)
 			siswa.GET("/:id", middleware.RequireRole(pantau...), handlers.GetSiswaByID)
-			siswa.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateSiswa)
-			siswa.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteSiswa)
+			siswa.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateSiswa)
+			siswa.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteSiswa)
 		}
 
 		// ===== Data master: admin kelola, siswa tidak boleh melihat =====
 		jurusan := api.Group("/jurusan")
 		jurusan.Use(middleware.VerifyToken())
 		{
-			jurusan.POST("", middleware.RequireRole("admin"), handlers.CreateJurusan)
+			jurusan.POST("", middleware.RequireAdminWrite(), handlers.CreateJurusan)
 			jurusan.GET("", middleware.RequireRole(bacaMaster...), handlers.ListJurusan)
 			jurusan.GET("/:id", middleware.RequireRole(bacaMaster...), handlers.GetJurusanByID)
-			jurusan.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateJurusan)
-			jurusan.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteJurusan)
+			jurusan.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateJurusan)
+			jurusan.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteJurusan)
 		}
 
 		kelas := api.Group("/kelas")
 		kelas.Use(middleware.VerifyToken())
 		{
-			kelas.POST("", middleware.RequireRole("admin"), handlers.CreateKelas)
+			kelas.POST("", middleware.RequireAdminWrite(), handlers.CreateKelas)
 			kelas.GET("", middleware.RequireRole(bacaMaster...), handlers.ListKelas)
 			kelas.GET("/:id", middleware.RequireRole(bacaMaster...), handlers.GetKelasByID)
-			kelas.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdateKelas)
-			kelas.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeleteKelas)
+			kelas.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateKelas)
+			kelas.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteKelas)
 		}
 
 		pelajaran := api.Group("/pelajaran")
 		pelajaran.Use(middleware.VerifyToken())
 		{
-			pelajaran.POST("", middleware.RequireRole("admin"), handlers.CreatePelajaran)
+			pelajaran.POST("", middleware.RequireAdminWrite(), handlers.CreatePelajaran)
 			pelajaran.GET("", middleware.RequireRole(bacaMaster...), handlers.ListPelajaran)
 			pelajaran.GET("/:id", middleware.RequireRole(bacaMaster...), handlers.GetPelajaranByID)
-			pelajaran.PUT("/:id", middleware.RequireRole("admin"), handlers.UpdatePelajaran)
-			pelajaran.DELETE("/:id", middleware.RequireRole("admin"), handlers.DeletePelajaran)
+			pelajaran.GET("/:id/guru", middleware.RequireRole(bacaMaster...), handlers.ListGuruPelajaran)
+			pelajaran.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdatePelajaran)
+			pelajaran.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeletePelajaran)
 		}
+
+		api.GET("/aktivitas", middleware.VerifyToken(), middleware.RequireRole(pantau...), handlers.ListAktivitas)
 
 		// ===== Pembelajaran: guru yang kelola, admin tidak ikut =====
 		materi := api.Group("/materi")
@@ -213,5 +219,20 @@ func main() {
 		}
 	}
 
-	r.Run(":8080")
+	return r
+}
+
+func main() {
+	godotenv.Load()
+	config.ConnectDB()
+	seedAdmin()
+
+	r := setupRouter()
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	if err := r.Run(":" + port); err != nil {
+		log.Fatal("Gagal menjalankan server:", err)
+	}
 }

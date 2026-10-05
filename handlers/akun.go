@@ -125,6 +125,7 @@ func CreateAkun(role string) gin.HandlerFunc {
 			respondAccountWriteError(c, err)
 			return
 		}
+		recordAktivitas(c, "menambahkan", aktivitasJenisRole(role), user.Nama)
 		c.JSON(http.StatusCreated, akunJSON(user))
 	}
 }
@@ -133,7 +134,7 @@ func ListAkun(role string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var users []models.User
 		if err := config.DB.Where("role = ?", role).Find(&users).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat daftar akun"})
 			return
 		}
 		out := make([]gin.H, 0, len(users))
@@ -222,22 +223,32 @@ func UpdateAkun(role string) gin.HandlerFunc {
 				return
 			}
 		}
-		config.DB.First(&user, user.ID)
+		if err := config.DB.First(&user, user.ID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat akun yang diperbarui"})
+			return
+		}
+		recordAktivitas(c, "mengubah", aktivitasJenisRole(role), user.Nama)
 		c.JSON(http.StatusOK, akunJSON(user))
 	}
 }
 
 func DeleteAkun(role string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var user models.User
+		if err := config.DB.Where("id = ? AND role = ?", c.Param("id"), role).First(&user).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Akun tidak ditemukan"})
+			return
+		}
 		res := config.DB.Where("id = ? AND role = ?", c.Param("id"), role).Delete(&models.User{})
 		if res.Error != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": res.Error.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus akun"})
 			return
 		}
 		if res.RowsAffected == 0 {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Tidak ditemukan"})
 			return
 		}
+		recordAktivitas(c, "menghapus", aktivitasJenisRole(role), user.Nama)
 		c.JSON(http.StatusOK, gin.H{"message": "Berhasil dihapus"})
 	}
 }

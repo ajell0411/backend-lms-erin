@@ -168,6 +168,7 @@ func CreateGuru(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat data guru"})
 		return
 	}
+	recordAktivitas(c, "menambahkan", "guru", user.Nama)
 	c.JSON(http.StatusCreated, guruJSON(user))
 }
 
@@ -178,7 +179,7 @@ func ListGuru(c *gin.Context) {
 	}
 	if search := strings.TrimSpace(c.Query("search")); search != "" {
 		like := "%" + search + "%"
-		query = query.Where("nama LIKE ? OR email LIKE ?", like, like)
+		query = query.Where("(nama LIKE ? OR email LIKE ?)", like, like)
 	}
 	if pelajaranID := c.Query("pelajaran_id"); pelajaranID != "" {
 		query = query.Joins("JOIN pelajaran_guru ON pelajaran_guru.user_id = users.id").Where("pelajaran_guru.pelajaran_id = ?", pelajaranID).Distinct("users.*")
@@ -276,10 +277,16 @@ func UpdateGuru(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat guru"})
 		return
 	}
+	recordAktivitas(c, "mengubah", "guru", user.Nama)
 	c.JSON(http.StatusOK, guruJSON(user))
 }
 
 func DeleteGuru(c *gin.Context) {
+	var user models.User
+	if err := config.DB.Where("role = ?", "guru").First(&user, c.Param("id")).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Guru tidak ditemukan"})
+		return
+	}
 	result := config.DB.Where("role = ?", "guru").Delete(&models.User{}, c.Param("id"))
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus guru"})
@@ -289,6 +296,7 @@ func DeleteGuru(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Guru tidak ditemukan"})
 		return
 	}
+	recordAktivitas(c, "menghapus", "guru", user.Nama)
 	c.JSON(http.StatusOK, gin.H{"message": "Berhasil dihapus"})
 }
 

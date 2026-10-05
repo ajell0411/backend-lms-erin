@@ -58,3 +58,13 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Akses ditolak"})
 	}
 }
+
+func RequireAdminWrite() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString("role") != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Anda tidak memiliki akses untuk aksi ini"})
+			return
+		}
+		c.Next()
+	}
+}
