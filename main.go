@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,104 @@ import (
 	"e-class-backend/middleware"
 	"e-class-backend/models"
 )
+
+func autoMigrateSiswaModels() {
+	if config.DB != nil {
+		_ = config.DB.AutoMigrate(
+			&models.PengumumanDibaca{},
+			&models.SiswaPengumumanStatus{},
+			&models.SiswaAsesmenSesi{},
+			&models.SiswaPengumpulanCatatan{},
+			&models.AsesmenMetadata{},
+			&models.TugasMetadata{},
+		)
+	}
+}
+
+func seedDemoAsesmen() {
+	if config.DB == nil {
+		return
+	}
+	var count int64
+	config.DB.Model(&models.Kuis{}).Count(&count)
+	if count > 0 {
+		return
+	}
+
+	var guru models.User
+	if err := config.DB.Where("role = ?", "guru").First(&guru).Error; err != nil {
+		return
+	}
+
+	var kelas models.Kelas
+	if err := config.DB.First(&kelas).Error; err != nil {
+		return
+	}
+
+	var pelajaran models.Pelajaran
+	if err := config.DB.First(&pelajaran).Error; err != nil {
+		return
+	}
+
+	soalKuis := `[
+		{"id": 1, "nomor": 1, "teks": "Apa kepanjangan dari HTML?", "opsi": [
+			{"kode": "A", "teks": "Hyper Text Markup Language"},
+			{"kode": "B", "teks": "High Tech Multi Language"},
+			{"kode": "C", "teks": "Hyper Transfer Markup Language"},
+			{"kode": "D", "teks": "Home Tool Markup Language"}
+		], "kunci": "A"},
+		{"id": 2, "nomor": 2, "teks": "Tag HTML manakah yang digunakan untuk membuat heading terbesar?", "opsi": [
+			{"kode": "A", "teks": "<heading>"},
+			{"kode": "B", "teks": "<h6>"},
+			{"kode": "C", "teks": "<h1>"},
+			{"kode": "D", "teks": "<head>"}
+		], "kunci": "C"},
+		{"id": 3, "nomor": 3, "teks": "Properti CSS apa yang digunakan untuk mengatur warna latar belakang?", "opsi": [
+			{"kode": "A", "teks": "color"},
+			{"kode": "B", "teks": "background-color"},
+			{"kode": "C", "teks": "bgcolor"},
+			{"kode": "D", "teks": "background-image"}
+		], "kunci": "B"}
+	]`
+
+	soalUjian := `[
+		{"id": 1, "nomor": 1, "teks": "Manakah atribut HTML yang digunakan untuk menentukan link tujuan pada tag <a>?", "opsi": [
+			{"kode": "A", "teks": "src"},
+			{"kode": "B", "teks": "href"},
+			{"kode": "C", "teks": "link"},
+			{"kode": "D", "teks": "target"}
+		], "kunci": "B"},
+		{"id": 2, "nomor": 2, "teks": "Simbol CSS yang digunakan untuk memilih elemen berdasarkan ID adalah?", "opsi": [
+			{"kode": "A", "teks": "."},
+			{"kode": "B", "teks": "#"},
+			{"kode": "C", "teks": "@"},
+			{"kode": "D", "teks": "*"}
+		], "kunci": "B"}
+	]`
+
+	now := time.Now()
+	kuis1 := models.Kuis{
+		Judul:       "Kuis HTML & CSS Dasar",
+		Jenis:       "kuis",
+		GuruID:      guru.ID,
+		PelajaranID: pelajaran.ID,
+		KelasID:     kelas.ID,
+		Soal:        soalKuis,
+		Deadline:    now.Add(14 * 24 * time.Hour),
+	}
+	config.DB.Create(&kuis1)
+
+	kuis2 := models.Kuis{
+		Judul:       "Ujian Harian Pemrograman Web",
+		Jenis:       "ujian_harian",
+		GuruID:      guru.ID,
+		PelajaranID: pelajaran.ID,
+		KelasID:     kelas.ID,
+		Soal:        soalUjian,
+		Deadline:    now.Add(14 * 24 * time.Hour),
+	}
+	config.DB.Create(&kuis2)
+}
 
 func seedAdmin() {
 	var count int64
@@ -42,6 +141,8 @@ func seedAdmin() {
 }
 
 func setupRouter() *gin.Engine {
+	autoMigrateSiswaModels()
+
 	// Kelompok role yang dipakai berulang
 	pantau := []string{"admin", "admin_kurikulum", "kepala_sekolah"}
 	bacaMaster := []string{"admin", "admin_kurikulum", "kepala_sekolah", "guru"}   // tanpa siswa
@@ -129,6 +230,27 @@ func setupRouter() *gin.Engine {
 			siswa.GET("/:id", middleware.RequireRole(pantau...), handlers.GetSiswaByID)
 			siswa.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateSiswa)
 			siswa.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteSiswa)
+
+			// ===== Fitur Siswa (Role Siswa) =====
+			siswa.GET("/dashboard", middleware.RequireRole("siswa"), handlers.GetSiswaDashboard)
+			siswa.GET("/pengumuman", middleware.RequireRole("siswa"), handlers.ListSiswaPengumuman)
+			siswa.POST("/pengumuman/dibaca", middleware.RequireRole("siswa"), handlers.TandaiSiswaPengumumanDibaca)
+			siswa.PUT("/pengumuman/dibaca", middleware.RequireRole("siswa"), handlers.TandaiSiswaPengumumanDibaca)
+			siswa.GET("/pelajaran", middleware.RequireRole("siswa"), handlers.ListSiswaPelajaran)
+			siswa.GET("/materi", middleware.RequireRole("siswa"), handlers.ListSiswaMateri)
+			siswa.GET("/materi/:id/unduh", middleware.RequireRole("siswa"), handlers.UnduhSiswaMateri)
+			siswa.GET("/asesmen", middleware.RequireRole("siswa"), handlers.ListSiswaAsesmen)
+			siswa.GET("/asesmen/:id", middleware.RequireRole("siswa"), handlers.GetSiswaAsesmenByID)
+			siswa.POST("/asesmen/:id/mulai", middleware.RequireRole("siswa"), handlers.MulaiSiswaAsesmen)
+			siswa.PUT("/asesmen/:id/jawaban", middleware.RequireRole("siswa"), handlers.SimpanJawabanSiswaAsesmen)
+			siswa.POST("/asesmen/:id/kirim", middleware.RequireRole("siswa"), handlers.KirimSiswaAsesmen)
+			siswa.GET("/tugas", middleware.RequireRole("siswa"), handlers.ListSiswaTugas)
+			siswa.GET("/tugas/:id", middleware.RequireRole("siswa"), handlers.GetSiswaTugasByID)
+			siswa.GET("/tugas/:id/lampiran", middleware.RequireRole("siswa"), handlers.UnduhSiswaTugasLampiran)
+			siswa.POST("/tugas/:id/kumpul", middleware.RequireRole("siswa"), handlers.KumpulkanSiswaTugas)
+			siswa.GET("/profil", middleware.RequireRole("siswa"), handlers.GetSiswaProfil)
+			siswa.PUT("/profil", middleware.RequireRole("siswa"), handlers.UpdateSiswaProfil)
+			siswa.POST("/profil/foto", middleware.RequireRole("siswa"), handlers.UploadFotoSiswaProfil)
 		}
 
 		// ===== Data master: admin kelola, siswa tidak boleh melihat =====
@@ -228,6 +350,7 @@ func main() {
 	godotenv.Load()
 	config.ConnectDB()
 	seedAdmin()
+	seedDemoAsesmen()
 
 	r := setupRouter()
 	port := os.Getenv("PORT")
