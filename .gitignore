@@ -5,3 +5,8 @@ guru.json
 login.json
 tugas-baru.json
 uploads/
+
+hasil.txt
+*.bak
+*.bak3
+eclass.db
