@@ -248,7 +248,7 @@ func setupRouter() *gin.Engine {
 			siswa.GET("/tugas/:id", middleware.RequireRole("siswa"), handlers.GetSiswaTugasByID)
 			siswa.GET("/tugas/:id/lampiran", middleware.RequireRole("siswa"), handlers.UnduhSiswaTugasLampiran)
 			siswa.POST("/tugas/:id/kumpul", middleware.RequireRole("siswa"), handlers.KumpulkanSiswaTugas)
-			siswa.GET("/profil", middleware.RequireRole("siswa"), handlers.GetSiswaProfil)
+			siswa.GET("/profil", middleware.RequireRole("siswa"), handlers.GetSiswaProfilLengkap)
 			siswa.PUT("/profil", middleware.RequireRole("siswa"), handlers.UpdateSiswaProfil)
 			siswa.POST("/profil/foto", middleware.RequireRole("siswa"), handlers.UploadFotoSiswaProfil)
 		}
