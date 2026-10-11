@@ -25,6 +25,8 @@ func autoMigrateSiswaModels() {
 			&models.SiswaPengumpulanCatatan{},
 			&models.AsesmenMetadata{},
 			&models.TugasMetadata{},
+			&models.GuruKelas{},
+			&models.Jadwal{},
 		)
 	}
 }
@@ -220,6 +222,44 @@ func setupRouter() *gin.Engine {
 			guru.GET("/:id", middleware.RequireRole(pantau...), handlers.GetGuruByID)
 			guru.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateGuru)
 			guru.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteGuru)
+
+			// ===== Fitur Guru (Role Guru) =====
+			guru.GET("/dashboard", middleware.RequireRole("guru"), handlers.GetGuruDashboard)
+			guru.GET("/kelas", middleware.RequireRole("guru"), handlers.ListGuruKelas)
+			guru.POST("/kelas", middleware.RequireRole("guru"), handlers.TambahGuruKelas)
+			guru.GET("/kelas/:id", middleware.RequireRole("guru"), handlers.DetailGuruKelas)
+			guru.PUT("/kelas/:id", middleware.RequireRole("guru"), handlers.UbahGuruKelas)
+			guru.DELETE("/kelas/:id", middleware.RequireRole("guru"), handlers.HapusGuruKelas)
+			guru.GET("/jadwal", middleware.RequireRole("guru"), handlers.ListGuruJadwal)
+			guru.POST("/jadwal", middleware.RequireRole("guru"), handlers.TambahGuruJadwal)
+			guru.PUT("/jadwal/:id", middleware.RequireRole("guru"), handlers.UbahGuruJadwal)
+			guru.DELETE("/jadwal/:id", middleware.RequireRole("guru"), handlers.HapusGuruJadwal)
+			guru.GET("/materi", middleware.RequireRole("guru"), handlers.ListGuruMateri)
+			guru.POST("/materi", middleware.RequireRole("guru"), handlers.TambahGuruMateri)
+			guru.PUT("/materi/:id", middleware.RequireRole("guru"), handlers.UbahGuruMateri)
+			guru.DELETE("/materi/:id", middleware.RequireRole("guru"), handlers.HapusGuruMateri)
+			guru.GET("/materi/:id/unduh", middleware.RequireRole("guru"), handlers.UnduhGuruMateri)
+			guru.GET("/tugas", middleware.RequireRole("guru"), handlers.ListGuruTugas)
+			guru.POST("/tugas", middleware.RequireRole("guru"), handlers.TambahGuruTugas)
+			guru.GET("/tugas/:id", middleware.RequireRole("guru"), handlers.DetailGuruTugas)
+			guru.PUT("/tugas/:id", middleware.RequireRole("guru"), handlers.UbahGuruTugas)
+			guru.DELETE("/tugas/:id", middleware.RequireRole("guru"), handlers.HapusGuruTugas)
+			guru.POST("/tugas/:id/nonaktif", middleware.RequireRole("guru"), handlers.NonaktifkanGuruTugas)
+			guru.GET("/pengumpulan/:id", middleware.RequireRole("guru"), handlers.DetailGuruPengumpulan)
+			guru.GET("/pengumpulan/:id/file", middleware.RequireRole("guru"), handlers.FileGuruPengumpulan)
+			guru.PUT("/pengumpulan/:id/nilai", middleware.RequireRole("guru"), handlers.NilaiGuruPengumpulan)
+			guru.GET("/asesmen", middleware.RequireRole("guru"), handlers.ListGuruAsesmen)
+			guru.POST("/asesmen", middleware.RequireRole("guru"), handlers.TambahGuruAsesmen)
+			guru.GET("/asesmen/:id", middleware.RequireRole("guru"), handlers.DetailGuruAsesmen)
+			guru.PUT("/asesmen/:id", middleware.RequireRole("guru"), handlers.UbahGuruAsesmen)
+			guru.DELETE("/asesmen/:id", middleware.RequireRole("guru"), handlers.HapusGuruAsesmen)
+			guru.POST("/asesmen/:id/soal", middleware.RequireRole("guru"), handlers.TambahGuruSoal)
+			guru.PUT("/asesmen/:id/soal/:nomor", middleware.RequireRole("guru"), handlers.UbahGuruSoal)
+			guru.DELETE("/asesmen/:id/soal/:nomor", middleware.RequireRole("guru"), handlers.HapusGuruSoal)
+			guru.GET("/asesmen/:id/murid", middleware.RequireRole("guru"), handlers.MuridGuruAsesmen)
+			guru.GET("/asesmen/:id/hasil/:siswa_id", middleware.RequireRole("guru"), handlers.HasilGuruAsesmen)
+			guru.GET("/nilai", middleware.RequireRole("guru"), handlers.RekapGuruNilai)
+			guru.GET("/aktivitas", middleware.RequireRole("guru"), handlers.ListGuruAktivitas)
 		}
 
 		siswa := api.Group("/siswa")
@@ -353,6 +393,7 @@ func main() {
 	seedDemoAsesmen()
 
 	r := setupRouter()
+	handlers.BackfillGuruKelas()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
