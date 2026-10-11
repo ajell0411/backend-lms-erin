@@ -42,7 +42,7 @@ func profileJSON(user models.User) gin.H {
 	if user.Username != nil {
 		username = *user.Username
 	}
-	return gin.H{"id": user.ID, "nama": user.Nama, "username": username, "email": user.Email, "role": user.Role, "nip": user.NIP, "nisn": user.NISN, "telepon": user.Telepon, "alamat": user.Alamat, "foto_url": user.FotoURL, "status": user.Status, "created_at": user.CreatedAt}
+	return gin.H{"id": user.ID, "nama": user.Nama, "username": username, "email": user.Email, "role": user.Role, "nip": user.NIP, "nisn": user.NISN, "telepon": user.Telepon, "alamat": user.Alamat, "foto_url": user.FotoURL, "jenis_kelamin": user.JenisKelamin, "status": user.Status, "created_at": user.CreatedAt}
 }
 func GetProfile(c *gin.Context) {
 	user, ok := currentProfile(c)
