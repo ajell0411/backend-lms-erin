@@ -128,6 +128,7 @@ func validateGuruInput(c *gin.Context, input guruInput, creating bool) bool {
 }
 
 func respondGuruWriteError(c *gin.Context, err error) {
+	println("DEBUG guru write error:", err.Error())
 	if isUniqueConstraintError(err) {
 		c.JSON(http.StatusConflict, gin.H{"error": "Username atau email sudah digunakan"})
 		return
