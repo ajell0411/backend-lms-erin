@@ -42,6 +42,9 @@ func VerifyToken() gin.HandlerFunc {
 		}
 		c.Set("userId", claims["userId"])
 		c.Set("role", claims["role"])
+		if blockReadOnlyWrite(c) {
+			return
+		}
 		c.Next()
 	}
 }
