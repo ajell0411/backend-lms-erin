@@ -325,6 +325,14 @@ func setupRouter() *gin.Engine {
 			pelajaran.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeletePelajaran)
 		}
 
+		// ===== Pemantauan (read only): statistik dan aktivitas guru =====
+		pemantauan := api.Group("/pemantauan")
+		pemantauan.Use(middleware.VerifyToken(), middleware.RequireRole("admin", "admin_kurikulum", "kepala_sekolah"))
+		{
+			pemantauan.GET("/statistik", handlers.GetPemantauanStatistik)
+			pemantauan.GET("/aktivitas-guru", handlers.ListPemantauanAktivitasGuru)
+			pemantauan.GET("/aktivitas-guru/:jenis/:id", handlers.GetPemantauanAktivitasGuruDetail)
+		}
 		api.GET("/aktivitas", middleware.VerifyToken(), middleware.RequireRole(pantau...), handlers.ListAktivitas)
 
 		// ===== Pembelajaran: guru yang kelola, admin tidak ikut =====
