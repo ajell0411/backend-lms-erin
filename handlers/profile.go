@@ -86,12 +86,8 @@ func UpdateProfilePassword(c *gin.Context) {
 		return
 	}
 	var input profilePasswordInput
-	if err := c.ShouldBindJSON(&input); err != nil || input.PasswordLama == "" || len(input.PasswordBaru) < 8 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Isi password lama dan password baru minimal 8 karakter"})
-		return
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.PasswordLama)); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Password lama tidak sesuai"})
+	if err := c.ShouldBindJSON(&input); err != nil || len(input.PasswordBaru) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password baru minimal 8 karakter"})
 		return
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(input.PasswordBaru), bcrypt.DefaultCost)
