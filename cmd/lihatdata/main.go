@@ -53,7 +53,7 @@ func main() {
         log.Fatalf("tabel %q tidak ada. Jalankan tanpa nama tabel untuk lihat daftar.", nama)
     }
 
-    rows, err := db.Raw("SELECT * FROM `" + nama + "` LIMIT 100").Rows()
+    rows, err := db.Raw("SELECT * FROM `" + nama + "`").Rows()
     if err != nil {
         log.Fatal(err)
     }
@@ -88,5 +88,6 @@ func main() {
             fmt.Printf("%-20s %s\n", k, potong(teks, 80))
         }
     }
-    fmt.Printf("\nTotal ditampilkan: %d data (maks 100)\n", no)
+    fmt.Printf("\nTotal ditampilkan: %d data\n", no)
 }
+
