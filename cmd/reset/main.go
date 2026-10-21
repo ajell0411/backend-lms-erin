@@ -22,7 +22,7 @@ type akun struct {
 }
 
 var akunTetap = []akun{
-    {"Admin", "admin", "siswa123", "admin"},
+    {"Admin", "admin", "admin123", "admin"},
     {"Siswa 1", "siswa1", "siswa123", "siswa"},
     {"Admin Kurikulum", "kurikulum", "kurikulum123", "admin_kurikulum"},
     {"Kepala Sekolah", "kepsek", "kepsek123", "kepala_sekolah"},
