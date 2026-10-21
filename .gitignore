@@ -10,3 +10,6 @@ hasil.txt
 *.bak
 *.bak3
 eclass.db
+backup-*/
+*.bak-*
+eclass.db-*
