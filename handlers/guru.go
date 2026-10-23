@@ -112,6 +112,10 @@ func validateGuruInput(c *gin.Context, input guruInput, creating bool) bool {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama, username, email, password, dan status wajib diisi"})
 		return false
 	}
+	if !validNumericOptional(input.Telepon) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return false
+	}
 	if !validNumericIdentifier(input.NIP) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 		return false
@@ -146,6 +150,10 @@ func CreateGuru(c *gin.Context) {
 		return
 	}
 	if !validateGuruLesson(c, input.PelajaranID) {
+		return
+	}
+	if !validPassword(*input.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
 		return
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
@@ -243,12 +251,24 @@ func UpdateGuru(c *gin.Context) {
 		updates["email"] = normalizeOptional(input.Email)
 	}
 	if input.Password != nil && *input.Password != "" {
+		if !validPassword(*input.Password) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
+			return
+		}
 		hashed, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses password"})
 			return
 		}
 		updates["password"] = string(hashed)
+	}
+	if !validNumericOptional(input.NIP) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
+		return
+	}
+	if !validNumericOptional(input.Telepon) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return
 	}
 	if input.NIP != nil {
 		updates["NIP"] = normalizeOptional(input.NIP)
