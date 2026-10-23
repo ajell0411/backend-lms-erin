@@ -37,6 +37,10 @@ func CreateAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
 		return
 	}
+	if !validNumericOptional(input.Telepon) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return
+	}
 	if !validNumericIdentifier(input.NIP) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 		return
@@ -46,6 +50,10 @@ func CreateAdmin(c *gin.Context) {
 		status = *input.Status
 	}
 
+	if !validPassword(input.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
+		return
+	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal hash password"})
@@ -124,6 +132,10 @@ func UpdateAdmin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
 		return
 	}
+	if !validNumericOptional(input.Telepon) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return
+	}
 	if !validNumericIdentifier(input.NIP) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 		return
@@ -144,6 +156,10 @@ func UpdateAdmin(c *gin.Context) {
 	}
 
 	if input.Password != "" {
+		if !validPassword(input.Password) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
+			return
+		}
 		hashed, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal hash password"})
@@ -179,6 +195,10 @@ func UpdateAdmin(c *gin.Context) {
 }
 
 func DeleteAdmin(c *gin.Context) {
+	if c.GetString("role") != "super_admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya super admin yang dapat menghapus akun admin"})
+		return
+	}
 	var user models.User
 	if err := config.DB.Where("role = ?", "admin").First(&user, c.Param("id")).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Admin tidak ditemukan"})
