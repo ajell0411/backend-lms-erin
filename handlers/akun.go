@@ -103,6 +103,10 @@ func CreateAkun(role string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
 			return
 		}
+		if !validNumericOptional(in.Telepon) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+			return
+		}
 		if !validNumericIdentifier(in.NIP) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 			return
@@ -112,6 +116,10 @@ func CreateAkun(role string) gin.HandlerFunc {
 			status = *in.Status
 		}
 
+		if !validPassword(in.Password) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
+			return
+		}
 		hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses password"})
@@ -184,6 +192,10 @@ func UpdateAkun(role string) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "status harus aktif atau nonaktif"})
 			return
 		}
+		if !validNumericOptional(in.Telepon) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+			return
+		}
 		if !validNumericIdentifier(in.NIP) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "NIP hanya boleh berisi angka"})
 			return
@@ -212,6 +224,10 @@ func UpdateAkun(role string) gin.HandlerFunc {
 			updates["role"] = *in.Role
 		}
 		if in.Password != "" {
+			if !validPassword(in.Password) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
+				return
+			}
 			hashed, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses password"})
