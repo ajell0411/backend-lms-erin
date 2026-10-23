@@ -142,13 +142,39 @@ func seedAdmin() {
 	}
 }
 
+func seedSuperAdmin() {
+	var count int64
+	config.DB.Model(&models.User{}).Where("role = ?", "super_admin").Count(&count)
+	if count > 0 {
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte("superadmin123"), bcrypt.DefaultCost)
+	if err != nil {
+		log.Println("gagal hash password super admin:", err)
+		return
+	}
+
+	username := "superadmin"
+	superAdmin := models.User{
+		Nama:     "Super Admin E-CLASS",
+		Username: &username,
+		Email:    "superadmin",
+		Password: string(hashed),
+		Role:     "super_admin",
+	}
+	if err := config.DB.Create(&superAdmin).Error; err != nil {
+		log.Println("gagal membuat super admin awal:", err)
+	}
+}
+
 func setupRouter() *gin.Engine {
 	autoMigrateSiswaModels()
 
 	// Kelompok role yang dipakai berulang
-	pantau := []string{"admin", "admin_kurikulum", "kepala_sekolah"}
-	bacaMaster := []string{"admin", "admin_kurikulum", "kepala_sekolah", "guru"}   // tanpa siswa
-	bacaAkademik := []string{"admin_kurikulum", "kepala_sekolah", "guru", "siswa"} // tanpa admin
+	pantau := []string{"admin", "super_admin", "admin_kurikulum", "kepala_sekolah"}
+	bacaMaster := []string{"admin", "super_admin", "admin_kurikulum", "kepala_sekolah", "guru"} // tanpa siswa
+	bacaAkademik := []string{"admin_kurikulum", "kepala_sekolah", "guru", "siswa"}              // tanpa admin
 
 	frontendURL := os.Getenv("FRONTEND_URL")
 	if frontendURL == "" {
@@ -186,11 +212,11 @@ func setupRouter() *gin.Engine {
 		admin := api.Group("/admin")
 		admin.Use(middleware.VerifyToken())
 		{
-			admin.POST("", middleware.RequireAdminWrite(), handlers.CreateAdmin)
+			admin.POST("", middleware.RequireRole("super_admin"), handlers.CreateAdmin)
 			admin.GET("", middleware.RequireRole(pantau...), handlers.ListAdmin)
 			admin.GET("/:id", middleware.RequireRole(pantau...), handlers.GetAdminByID)
-			admin.PUT("/:id", middleware.RequireAdminWrite(), handlers.UpdateAdmin)
-			admin.DELETE("/:id", middleware.RequireAdminWrite(), handlers.DeleteAdmin)
+			admin.PUT("/:id", middleware.RequireRole("super_admin"), handlers.UpdateAdmin)
+			admin.DELETE("/:id", middleware.RequireRole("super_admin"), handlers.DeleteAdmin)
 		}
 
 		kurikulum := api.Group("/admin-kurikulum")
@@ -327,7 +353,7 @@ func setupRouter() *gin.Engine {
 
 		// ===== Pemantauan (read only): statistik dan aktivitas guru =====
 		pemantauan := api.Group("/pemantauan")
-		pemantauan.Use(middleware.VerifyToken(), middleware.RequireRole("admin", "admin_kurikulum", "kepala_sekolah"))
+		pemantauan.Use(middleware.VerifyToken(), middleware.RequireRole(pantau...))
 		{
 			pemantauan.GET("/statistik", handlers.GetPemantauanStatistik)
 			pemantauan.GET("/aktivitas-guru", handlers.ListPemantauanAktivitasGuru)
@@ -398,6 +424,7 @@ func main() {
 	godotenv.Load()
 	config.ConnectDB()
 	seedAdmin()
+	seedSuperAdmin()
 	seedDemoAsesmen()
 
 	r := setupRouter()
