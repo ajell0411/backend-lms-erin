@@ -75,6 +75,7 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	}
 	defer database.Close()
 	seedAdmin()
+	seedSuperAdmin()
 	router := setupRouter()
 
 	login := apiRequest(t, router, http.MethodPost, "/auth/login", map[string]any{"username": "admin", "password": "admin123"}, "")
@@ -82,6 +83,9 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	adminToken := decodeObject(t, login)["token"].(string)
 	self := decodeObject(t, apiRequest(t, router, http.MethodGet, "/profile", nil, adminToken))
 	selfID := int(self["id"].(float64))
+	superLogin := apiRequest(t, router, http.MethodPost, "/auth/login", map[string]any{"username": "superadmin", "password": "superadmin123"}, "")
+	assertStatus(t, superLogin, http.StatusOK)
+	adminToken = decodeObject(t, superLogin)["token"].(string)
 	for _, name := range []string{"Admin Edit One", "Admin Edit Two"} {
 		update := apiRequest(t, router, http.MethodPut, "/admin/"+jsonNumber(selfID), map[string]any{"nama": name, "email": "admin", "username": "admin", "role": "admin"}, adminToken)
 		assertStatus(t, update, http.StatusOK)
