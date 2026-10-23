@@ -74,6 +74,14 @@ func validateSiswaInput(c *gin.Context, input siswaInput, creating bool) bool {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama, username, email, password, dan status wajib diisi"})
 		return false
 	}
+	if !validNumericOptional(input.Telepon) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return false
+	}
+	if !validNumericOptional(input.TeleponWali) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon wali hanya boleh berisi angka"})
+		return false
+	}
 	if !validNumericIdentifier(input.NISN) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "NISN hanya boleh berisi angka"})
 		return false
@@ -128,6 +136,10 @@ func CreateSiswa(c *gin.Context) {
 		return
 	}
 	if !validateSiswaInput(c, input, true) {
+		return
+	}
+	if !validPassword(*input.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
 		return
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
@@ -236,6 +248,10 @@ func UpdateSiswa(c *gin.Context) {
 		updates["email"] = normalizeOptional(input.Email)
 	}
 	if input.Password != nil && *input.Password != "" {
+		if !validPassword(*input.Password) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Password minimal 8 karakter, hanya huruf dan angka"})
+			return
+		}
 		hashed, err := bcrypt.GenerateFromPassword([]byte(*input.Password), bcrypt.DefaultCost)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memproses password"})
@@ -243,10 +259,22 @@ func UpdateSiswa(c *gin.Context) {
 		}
 		updates["password"] = string(hashed)
 	}
+	if !validNumericOptional(input.NISN) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "NISN hanya boleh berisi angka"})
+		return
+	}
+	if !validNumericOptional(input.Telepon) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return
+	}
+	if !validNumericOptional(input.TeleponWali) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Telepon wali hanya boleh berisi angka"})
+		return
+	}
 	if input.NISN != nil {
 		value := strings.TrimSpace(*input.NISN)
 		if value == "" {
-		updates["NISN"] = nil
+			updates["NISN"] = nil
 		} else {
 			updates["NISN"] = value
 		}
