@@ -66,6 +66,10 @@ func UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama dan email wajib diisi"})
 		return
 	}
+	if t := strings.TrimSpace(input.Telepon); !validNumericOptional(&t) {
+		c.JSON(400, gin.H{"error": "Telepon hanya boleh berisi angka"})
+		return
+	}
 	updates := map[string]any{"nama": nama, "email": email, "telepon": strings.TrimSpace(input.Telepon), "alamat": strings.TrimSpace(input.Alamat), "foto_url": strings.TrimSpace(input.FotoURL)}
 	if input.Username != nil {
 		updates["username"] = normalizedUsername(input.Username)
@@ -86,8 +90,12 @@ func UpdateProfilePassword(c *gin.Context) {
 		return
 	}
 	var input profilePasswordInput
-	if err := c.ShouldBindJSON(&input); err != nil || len(input.PasswordBaru) < 8 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Password baru minimal 8 karakter"})
+	if err := c.ShouldBindJSON(&input); err != nil || !validPassword(input.PasswordBaru) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password baru minimal 8 karakter, hanya huruf dan angka"})
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.PasswordLama)) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Password lama salah"})
 		return
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(input.PasswordBaru), bcrypt.DefaultCost)
