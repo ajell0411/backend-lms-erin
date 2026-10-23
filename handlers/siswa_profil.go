@@ -102,8 +102,8 @@ func UpdateSiswaProfil(c *gin.Context) {
 			sendSiswaError(c, http.StatusBadRequest, "Password lama dan password baru wajib diisi")
 			return
 		}
-		if len(input.PasswordBaru) < 6 {
-			sendSiswaError(c, http.StatusBadRequest, "Password baru minimal 6 karakter")
+		if !validPassword(input.PasswordBaru) {
+			sendSiswaError(c, http.StatusBadRequest, "Password baru minimal 8 karakter, hanya huruf dan angka")
 			return
 		}
 		if err := bcrypt.CompareHashAndPassword([]byte(siswa.Password), []byte(input.PasswordLama)); err != nil {
