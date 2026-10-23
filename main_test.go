@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"bytes"
@@ -96,7 +96,7 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	}
 	accountIDs := make(map[string]int)
 	for _, route := range accountRoutes {
-		body := map[string]any{"nama": "Test " + route.role, "username": "crud_" + route.role, "email": "crud_" + route.role + "@example.test", "password": "crud-pass-123", "status": "aktif", "nip": "123456789"}
+		body := map[string]any{"nama": "Test " + route.role, "username": "crud_" + route.role, "email": "crud_" + route.role + "@example.test", "password": "CrudPass123", "status": "aktif", "nip": "123456789"}
 		created := apiRequest(t, router, http.MethodPost, route.path, body, adminToken)
 		assertStatus(t, created, http.StatusCreated)
 		id := int(decodeObject(t, created)["id"].(float64))
@@ -141,7 +141,7 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/pelajaran", map[string]any{"nama": "Duplicate", "kode": "t-sub"}, adminToken), http.StatusConflict)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/pelajaran/"+jsonNumber(subjectID), map[string]any{"nama": "Updated Subject", "kode": "T-SUB-2"}, adminToken), http.StatusOK)
 
-	teacher := apiRequest(t, router, http.MethodPost, "/guru", map[string]any{"nama": "Test Teacher", "username": "test_teacher", "email": "teacher@example.test", "password": "crud-pass-123", "status": "aktif", "nip": "123456789"}, adminToken)
+	teacher := apiRequest(t, router, http.MethodPost, "/guru", map[string]any{"nama": "Test Teacher", "username": "test_teacher", "email": "teacher@example.test", "password": "CrudPass123", "status": "aktif", "nip": "123456789"}, adminToken)
 	assertStatus(t, teacher, http.StatusCreated)
 	teacherID := int(decodeObject(t, teacher)["id"].(float64))
 	teacherList := apiRequest(t, router, http.MethodGet, "/guru?search=Test+Teacher", nil, adminToken)
@@ -153,7 +153,7 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"nama": "Updated Teacher", "nip": "987654321"}, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"nama": "Updated Teacher Again", "nip": "987654322"}, adminToken), http.StatusOK)
 
-	student := apiRequest(t, router, http.MethodPost, "/siswa", map[string]any{"nama": "Test Student", "username": "test_student", "email": "student@example.test", "password": "crud-pass-123", "status": "aktif", "nisn": "1234567890", "kelas_id": classID}, adminToken)
+	student := apiRequest(t, router, http.MethodPost, "/siswa", map[string]any{"nama": "Test Student", "username": "test_student", "email": "student@example.test", "password": "CrudPass123", "status": "aktif", "nisn": "1234567890", "kelas_id": classID}, adminToken)
 	assertStatus(t, student, http.StatusCreated)
 	studentID := int(decodeObject(t, student)["id"].(float64))
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/siswa?jurusan_id="+jsonNumber(majorID)+"&kelas_id="+jsonNumber(classID)+"&search=Test+Student", nil, adminToken), http.StatusOK)
@@ -177,9 +177,9 @@ func TestAdminCRUDRoutes(t *testing.T) {
 		t.Fatal("nonmatching student search returned rows")
 	}
 
-	kurikulumToken := loginToken(t, router, "crud_admin_kurikulum", "crud-pass-123")
+	kurikulumToken := loginToken(t, router, "crud_admin_kurikulum", "CrudPass123")
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/pelajaran", map[string]any{"nama": "Denied", "kode": "DENIED"}, kurikulumToken), http.StatusForbidden)
-	studentToken := loginToken(t, router, "test_student", "crud-pass-123")
+	studentToken := loginToken(t, router, "test_student", "CrudPass123")
 	for _, path := range []string{"/jurusan", "/kelas", "/pelajaran"} {
 		assertStatus(t, apiRequest(t, router, http.MethodGet, path, nil, studentToken), http.StatusForbidden)
 	}
@@ -226,9 +226,9 @@ func TestProfileRoutes(t *testing.T) {
 	if decodeObject(t, updated)["nama"] != "Admin Updated" {
 		t.Fatal("profile update did not return saved name")
 	}
-	assertStatus(t, apiRequest(t, router, http.MethodPut, "/profile/password", map[string]any{"password_lama": "wrong-password", "password_baru": "new-password-123"}, token), http.StatusBadRequest)
-	assertStatus(t, apiRequest(t, router, http.MethodPut, "/profile/password", map[string]any{"password_lama": "admin123", "password_baru": "new-password-123"}, token), http.StatusOK)
-	assertStatus(t, apiRequest(t, router, http.MethodPost, "/auth/login", map[string]any{"username": "admin", "password": "new-password-123"}, ""), http.StatusOK)
-	newToken := loginToken(t, router, "admin", "new-password-123")
-	assertStatus(t, apiRequest(t, router, http.MethodPut, "/profile/password", map[string]any{"password_lama": "new-password-123", "password_baru": "admin123"}, newToken), http.StatusOK)
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/profile/password", map[string]any{"password_lama": "wrong-password", "password_baru": "NewPassword123"}, token), http.StatusBadRequest)
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/profile/password", map[string]any{"password_lama": "admin123", "password_baru": "NewPassword123"}, token), http.StatusOK)
+	assertStatus(t, apiRequest(t, router, http.MethodPost, "/auth/login", map[string]any{"username": "admin", "password": "NewPassword123"}, ""), http.StatusOK)
+	newToken := loginToken(t, router, "admin", "NewPassword123")
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/profile/password", map[string]any{"password_lama": "NewPassword123", "password_baru": "admin123"}, newToken), http.StatusOK)
 }
