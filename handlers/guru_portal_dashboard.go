@@ -120,6 +120,53 @@ func GetGuruDashboard(c *gin.Context) {
 		jadwalOut = append(jadwalOut, guruPortalJadwalJSON(j))
 	}
 
+    perluList := []gin.H{}
+    if len(tugasList) > 0 {
+        type menunggu struct {
+            TugasID uint
+            Jumlah  int64
+        }
+        var menungguRows []menunggu
+        db.Model(&models.PengumpulanTugas{}).
+            Select("tugas_id, COUNT(*) AS jumlah").
+            Where("tugas_id IN ? AND nilai IS NULL", tugasIDs).
+            Group("tugas_id").
+            Scan(&menungguRows)
+        if len(menungguRows) > 0 {
+            tugasByID := map[uint]models.Tugas{}
+            kelasIDs := []uint{}
+            kelasSeen := map[uint]bool{}
+            for _, t := range tugasList {
+                tugasByID[t.ID] = t
+                if !kelasSeen[t.KelasID] {
+                    kelasSeen[t.KelasID] = true
+                    kelasIDs = append(kelasIDs, t.KelasID)
+                }
+            }
+            var kelasRows []models.Kelas
+            db.Preload("Jurusan").Where("id IN ?", kelasIDs).Find(&kelasRows)
+            kelasByID := map[uint]models.Kelas{}
+            for _, k := range kelasRows {
+                kelasByID[k.ID] = k
+            }
+            sort.Slice(menungguRows, func(a, b int) bool { return menungguRows[a].Jumlah > menungguRows[b].Jumlah })
+            for _, m := range menungguRows {
+                t := tugasByID[m.TugasID]
+                k := kelasByID[t.KelasID]
+                perluList = append(perluList, gin.H{
+                    "tugas_id":     m.TugasID,
+                    "judul":        t.Judul,
+                    "kelas_nama":   k.Nama,
+                    "jurusan_kode": k.Jurusan.Kode,
+                    "jurusan_nama": k.Jurusan.Nama,
+                    "jumlah":       m.Jumlah,
+                })
+                if len(perluList) >= 10 {
+                    break
+                }
+            }
+        }
+    }
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
 		"nama":            guru.Nama,
 		"jumlah_kelas":    jumlahKelas,
@@ -128,5 +175,6 @@ func GetGuruDashboard(c *gin.Context) {
 		"perlu_dinilai":   perluDinilai,
 		"jadwal_hari_ini": jadwalOut,
 		"aktivitas":       items,
+        "perlu_dinilai_list": perluList,
 	}})
 }
