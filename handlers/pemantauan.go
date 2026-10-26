@@ -18,30 +18,69 @@ import (
 // ===================== Statistik dashboard =====================
 
 func GetPemantauanStatistik(c *gin.Context) {
-	var guru, siswa, kelas, jurusan, pelajaran int64
-	db := config.DB
-	hasil := []error{
-		db.Model(&models.User{}).Where("role = ?", "guru").Count(&guru).Error,
-		db.Model(&models.User{}).Where("role = ?", "siswa").Count(&siswa).Error,
-		db.Model(&models.Kelas{}).Count(&kelas).Error,
-		db.Model(&models.Jurusan{}).Count(&jurusan).Error,
-		db.Model(&models.Pelajaran{}).Count(&pelajaran).Error,
-	}
-	for _, err := range hasil {
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat statistik"})
-			return
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
-		"total_guru":      guru,
-		"total_siswa":     siswa,
-		"total_kelas":     kelas,
-		"total_jurusan":   jurusan,
-		"total_pelajaran": pelajaran,
-	}})
-}
+    db := config.DB
 
+    hitung := func(role ...string) (total int64, aktif int64, err error) {
+        if err = db.Model(&models.User{}).Where("role IN ?", role).Count(&total).Error; err != nil {
+            return
+        }
+        aktif = total
+        if db.Migrator().HasColumn(&models.User{}, "status") {
+            err = db.Model(&models.User{}).
+                Where("role IN ?", role).
+                Where("LOWER(status) = ?", "aktif").
+                Count(&aktif).Error
+        }
+        return
+    }
+
+    totalAdmin, aktifAdmin, e1 := hitung("admin", "super_admin", "admin_kurikulum", "kepala_sekolah")
+    totalGuru, aktifGuru, e2 := hitung("guru")
+    totalSiswa, aktifSiswa, e3 := hitung("siswa")
+
+    var kelas, jurusan, pelajaran int64
+    hasil := []error{
+        e1, e2, e3,
+        db.Model(&models.Kelas{}).Count(&kelas).Error,
+        db.Model(&models.Jurusan{}).Count(&jurusan).Error,
+        db.Model(&models.Pelajaran{}).Count(&pelajaran).Error,
+    }
+    for _, err := range hasil {
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat statistik"})
+            return
+        }
+    }
+
+    jurusanStat := []gin.H{}
+    var daftarJurusan []models.Jurusan
+    if err := db.Order("id ASC").Find(&daftarJurusan).Error; err == nil {
+        for _, j := range daftarJurusan {
+            var idKelas []uint
+            db.Model(&models.Kelas{}).Where("jurusan_id = ?", j.ID).Pluck("id", &idKelas)
+            var siswaJur int64
+            if len(idKelas) > 0 {
+                db.Model(&models.User{}).Where("role = ? AND kelas_id IN ?", "siswa", idKelas).Count(&siswaJur)
+            }
+            jurusanStat = append(jurusanStat, gin.H{"kode": j.Kode, "nama": j.Nama, "total_siswa": siswaJur, "total_kelas": len(idKelas)})
+        }
+    }
+
+    c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
+        "total_admin":      totalAdmin,
+        "total_guru":       totalGuru,
+        "total_siswa":      totalSiswa,
+        "total_kelas":      kelas,
+        "total_jurusan":    jurusan,
+        "total_pelajaran":  pelajaran,
+        "aktif_admin":      aktifAdmin,
+        "aktif_guru":       aktifGuru,
+        "aktif_siswa":      aktifSiswa,
+        "total_akun":       totalAdmin + totalGuru + totalSiswa,
+        "total_akun_aktif": aktifAdmin + aktifGuru + aktifSiswa,
+        "jurusan":          jurusanStat,
+    }})
+}
 // ===================== Aktivitas guru =====================
 
 type PemantauanItem struct {
