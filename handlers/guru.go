@@ -26,6 +26,7 @@ type guruInput struct {
 	Status       *string      `json:"status"`
 	FotoURL      *string      `json:"foto_url"`
 	PelajaranID  optionalUint `json:"pelajaran_id"`
+	PelajaranIDs []uint       `json:"pelajaran_ids"`
 }
 
 type optionalUint struct {
@@ -53,45 +54,124 @@ func guruJSON(user models.User) gin.H {
 		username = *user.Username
 	}
 	var pelajaranID *uint
-	namaPelajaran := ""
+	pelajaranIDs := make([]uint, 0, len(user.Pelajaran))
+	namaPelajaran := make([]string, 0, len(user.Pelajaran))
 	if len(user.Pelajaran) > 0 {
 		id := user.Pelajaran[0].ID
 		pelajaranID = &id
-		namaPelajaran = user.Pelajaran[0].Nama
+		for _, pelajaran := range user.Pelajaran {
+			pelajaranIDs = append(pelajaranIDs, pelajaran.ID)
+			namaPelajaran = append(namaPelajaran, pelajaran.Nama)
+		}
 	}
 	return gin.H{
 		"id": user.ID, "nama": user.Nama, "username": username, "email": user.Email,
 		"role": user.Role, "nip": user.NIP, "jenis_kelamin": user.JenisKelamin,
 		"telepon": user.Telepon, "alamat": user.Alamat, "status": user.Status,
-		"foto_url": user.FotoURL, "pelajaran_id": pelajaranID,
-		"nama_pelajaran": namaPelajaran, "created_at": user.CreatedAt,
+		"foto_url": user.FotoURL, "pelajaran_id": pelajaranID, "pelajaran_ids": pelajaranIDs,
+		"nama_pelajaran": strings.Join(namaPelajaran, ", "), "created_at": user.CreatedAt,
 	}
 }
 
-func validateGuruLesson(c *gin.Context, field optionalUint) bool {
-	if !field.Set || field.Value == nil {
+func selectedGuruLessons(input guruInput) ([]uint, bool) {
+	if input.PelajaranIDs != nil {
+		return input.PelajaranIDs, true
+	}
+	if !input.PelajaranID.Set {
+		return nil, false
+	}
+	if input.PelajaranID.Value == nil {
+		return []uint{}, true
+	}
+	return []uint{*input.PelajaranID.Value}, true
+}
+
+func validateGuruLessons(c *gin.Context, input guruInput) bool {
+	ids, set := selectedGuruLessons(input)
+	if !set {
+		return true
+	}
+	if len(ids) > 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Guru hanya dapat memiliki maksimal 2 mata pelajaran"})
+		return false
+	}
+	uniqueIDs := make(map[uint]struct{}, len(ids))
+	for _, id := range ids {
+		if id == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Mata pelajaran tidak ditemukan"})
+			return false
+		}
+		uniqueIDs[id] = struct{}{}
+	}
+	if len(uniqueIDs) != len(ids) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mata pelajaran tidak boleh dipilih lebih dari sekali"})
+		return false
+	}
+	if len(ids) == 0 {
 		return true
 	}
 	var count int64
-	if err := config.DB.Model(&models.Pelajaran{}).Where("id = ?", *field.Value).Count(&count).Error; err != nil || count == 0 {
+	if err := config.DB.Model(&models.Pelajaran{}).Where("id IN ?", ids).Count(&count).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa mata pelajaran"})
+		return false
+	}
+	if count != int64(len(ids)) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Mata pelajaran tidak ditemukan"})
 		return false
 	}
 	return true
 }
 
-func saveGuruLesson(user *models.User, field optionalUint) error {
-	if !field.Set {
+func validateGuruSubjectLimit(c *gin.Context, guruID uint, proposedIDs []uint, includeCurrentSubjects bool, excludedSubjectID uint, addNewSubject bool) bool {
+	subjectIDs := make(map[uint]struct{})
+	var assignedIDs []uint
+	if err := config.DB.Model(&models.GuruKelas{}).Where("guru_id = ?", guruID).Distinct("pelajaran_id").Pluck("pelajaran_id", &assignedIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa penugasan mata pelajaran guru"})
+		return false
+	}
+	for _, id := range assignedIDs {
+		subjectIDs[id] = struct{}{}
+	}
+	if includeCurrentSubjects {
+		query := config.DB.Table("pelajaran_guru").Where("user_id = ?", guruID)
+		if excludedSubjectID > 0 {
+			query = query.Where("pelajaran_id <> ?", excludedSubjectID)
+		}
+		var currentIDs []uint
+		if err := query.Pluck("pelajaran_id", &currentIDs).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memeriksa mata pelajaran guru"})
+			return false
+		}
+		for _, id := range currentIDs {
+			subjectIDs[id] = struct{}{}
+		}
+	}
+	for _, id := range proposedIDs {
+		subjectIDs[id] = struct{}{}
+	}
+	subjectCount := len(subjectIDs)
+	if addNewSubject {
+		subjectCount++
+	}
+	if subjectCount > 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Guru hanya dapat mengajar maksimal 2 mata pelajaran"})
+		return false
+	}
+	return true
+}
+
+func saveGuruLessons(db *gorm.DB, user *models.User, ids []uint, set bool) error {
+	if !set {
 		return nil
 	}
-	if field.Value == nil {
-		return config.DB.Model(user).Association("Pelajaran").Clear()
+	if len(ids) == 0 {
+		return db.Model(user).Association("Pelajaran").Clear()
 	}
-	var pelajaran models.Pelajaran
-	if err := config.DB.First(&pelajaran, *field.Value).Error; err != nil {
+	var pelajaran []models.Pelajaran
+	if err := db.Where("id IN ?", ids).Find(&pelajaran).Error; err != nil {
 		return err
 	}
-	return config.DB.Model(user).Association("Pelajaran").Replace(&pelajaran)
+	return db.Model(user).Association("Pelajaran").Replace(&pelajaran)
 }
 
 func validJenisKelamin(value string) bool {
@@ -149,7 +229,7 @@ func CreateGuru(c *gin.Context) {
 	if !validateGuruInput(c, input, true) {
 		return
 	}
-	if !validateGuruLesson(c, input.PelajaranID) {
+	if !validateGuruLessons(c, input) {
 		return
 	}
 	if !validPassword(*input.Password) {
@@ -169,12 +249,15 @@ func CreateGuru(c *gin.Context) {
 		Alamat: normalizeOptional(input.Alamat), Status: normalizeOptional(input.Status),
 		FotoURL: normalizeOptional(input.FotoURL),
 	}
-	if err := config.DB.Create(&user).Error; err != nil {
+	lessonIDs, updateLessons := selectedGuruLessons(input)
+	err = config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return saveGuruLessons(tx, &user, lessonIDs, updateLessons)
+	})
+	if err != nil {
 		respondGuruWriteError(c, err)
-		return
-	}
-	if err := saveGuruLesson(&user, input.PelajaranID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Gagal menyimpan mata pelajaran guru"})
 		return
 	}
 	if err := config.DB.Preload("Pelajaran").First(&user, user.ID).Error; err != nil {
@@ -232,7 +315,11 @@ func UpdateGuru(c *gin.Context) {
 	if !validateGuruInput(c, input, false) {
 		return
 	}
-	if !validateGuruLesson(c, input.PelajaranID) {
+	if !validateGuruLessons(c, input) {
+		return
+	}
+	lessonIDs, updateLessons := selectedGuruLessons(input)
+	if updateLessons && !validateGuruSubjectLimit(c, user.ID, lessonIDs, false, 0, false) {
 		return
 	}
 	updates := map[string]interface{}{}
@@ -288,14 +375,15 @@ func UpdateGuru(c *gin.Context) {
 	if input.FotoURL != nil {
 		updates["foto_url"] = normalizeOptional(input.FotoURL)
 	}
-	if len(updates) > 0 {
-		if err := config.DB.Model(&user).Updates(updates).Error; err != nil {
-			respondGuruWriteError(c, err)
-			return
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			if err := tx.Model(&user).Updates(updates).Error; err != nil {
+				return err
+			}
 		}
-	}
-	if err := saveGuruLesson(&user, input.PelajaranID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Gagal menyimpan mata pelajaran guru"})
+		return saveGuruLessons(tx, &user, lessonIDs, updateLessons)
+	}); err != nil {
+		respondGuruWriteError(c, err)
 		return
 	}
 	if err := config.DB.Preload("Pelajaran").First(&user, user.ID).Error; err != nil {
