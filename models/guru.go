@@ -6,6 +6,7 @@ import "time"
 type GuruKelas struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
 	GuruID      uint      `gorm:"not null;uniqueIndex:idx_guru_kelas_pel" json:"guruId"`
+	Guru        User      `gorm:"foreignKey:GuruID" json:"guru,omitempty"`
 	KelasID     uint      `gorm:"not null;uniqueIndex:idx_guru_kelas_pel" json:"kelasId"`
 	Kelas       Kelas     `json:"kelas,omitempty"`
 	PelajaranID uint      `gorm:"not null;uniqueIndex:idx_guru_kelas_pel" json:"pelajaranId"`
@@ -17,6 +18,7 @@ type GuruKelas struct {
 type Jadwal struct {
 	ID          uint      `gorm:"primaryKey" json:"id"`
 	GuruID      uint      `gorm:"not null;index" json:"guruId"`
+	Guru        User      `gorm:"foreignKey:GuruID" json:"guru,omitempty"`
 	KelasID     uint      `gorm:"not null" json:"kelasId"`
 	Kelas       Kelas     `json:"kelas,omitempty"`
 	PelajaranID uint      `gorm:"not null" json:"pelajaranId"`
