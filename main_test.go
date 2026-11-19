@@ -136,6 +136,12 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	if len(decodeObject(t, subject)["guru_ids"].([]any)) != 0 {
 		t.Fatal("subject create must allow an empty teacher list")
 	}
+	secondSubject := apiRequest(t, router, http.MethodPost, "/pelajaran", map[string]any{"nama": "Second Subject", "kode": "T-SUB-B"}, adminToken)
+	assertStatus(t, secondSubject, http.StatusCreated)
+	secondSubjectID := int(decodeObject(t, secondSubject)["id"].(float64))
+	thirdSubject := apiRequest(t, router, http.MethodPost, "/pelajaran", map[string]any{"nama": "Third Subject", "kode": "T-SUB-C"}, adminToken)
+	assertStatus(t, thirdSubject, http.StatusCreated)
+	thirdSubjectID := int(decodeObject(t, thirdSubject)["id"].(float64))
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/pelajaran", nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/pelajaran/"+jsonNumber(subjectID), nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/pelajaran", map[string]any{"nama": "Duplicate", "kode": "t-sub"}, adminToken), http.StatusConflict)
@@ -150,6 +156,15 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/guru/"+jsonNumber(teacherID), nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/pelajaran/"+jsonNumber(subjectID), map[string]any{"guru_ids": []int{teacherID}}, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodGet, "/pelajaran/"+jsonNumber(subjectID)+"/guru", nil, adminToken), http.StatusOK)
+	teacherSubjects := apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"pelajaran_ids": []int{subjectID, secondSubjectID}}, adminToken)
+	assertStatus(t, teacherSubjects, http.StatusOK)
+	if len(decodeObject(t, teacherSubjects)["pelajaran_ids"].([]any)) != 2 {
+		t.Fatal("teacher update must keep both selected subjects")
+	}
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"pelajaran_ids": []int{subjectID, secondSubjectID, subjectID + 100}}, adminToken), http.StatusBadRequest)
+	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": classID, "pelajaran_id": subjectID}, adminToken), http.StatusCreated)
+	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": classID, "pelajaran_id": secondSubjectID}, adminToken), http.StatusCreated)
+	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": classID, "pelajaran_id": thirdSubjectID}, adminToken), http.StatusBadRequest)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"nama": "Updated Teacher", "nip": "987654321"}, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"nama": "Updated Teacher Again", "nip": "987654322"}, adminToken), http.StatusOK)
 
