@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"e-class-backend/config"
 	"e-class-backend/models"
@@ -135,9 +136,21 @@ func TambahAdminGuruKelas(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Mata pelajaran tidak ditemukan"})
 		return
 	}
+	if !validateGuruSubjectLimit(c, guru.ID, []uint{input.PelajaranID}, true, 0, false) {
+		return
+	}
 	item := models.GuruKelas{GuruID: input.GuruID, KelasID: input.KelasID, PelajaranID: input.PelajaranID}
-	if err := config.DB.Create(&item).Error; err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Penugasan guru, kelas, dan mata pelajaran tersebut sudah ada"})
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&item).Error; err != nil {
+			return err
+		}
+		return tx.Model(&guru).Association("Pelajaran").Append(&pelajaran)
+	}); err != nil {
+		if isUniqueConstraintError(err) {
+			c.JSON(http.StatusConflict, gin.H{"error": "Penugasan guru, kelas, dan mata pelajaran tersebut sudah ada"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan penugasan guru"})
 		return
 	}
 	if err := config.DB.Preload("Guru").Preload("Kelas").Preload("Pelajaran").First(&item, item.ID).Error; err != nil {
