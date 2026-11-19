@@ -19,6 +19,7 @@ type User struct {
 	NamaWali     string      `json:"nama_wali"`
 	TeleponWali  string      `json:"telepon_wali"`
 	TahunMasuk   *int        `json:"tahun_masuk"`
+	TahunLulus   *int        `json:"tahun_lulus"`
 	Status       string      `gorm:"not null;default:aktif" json:"status"`
 	FotoURL      string      `json:"foto_url"`
 	KelasID      *uint       `json:"kelas_id,omitempty"`
