@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"e-class-backend/config"
 	"e-class-backend/models"
@@ -23,6 +25,7 @@ type SoalSiswa struct {
 	ID    uint            `json:"id"`
 	Nomor int             `json:"nomor"`
 	Teks  string          `json:"teks"`
+	Jenis string          `json:"jenis"`
 	Opsi  []OpsiSoalSiswa `json:"opsi"`
 }
 
@@ -30,6 +33,8 @@ type soalInternal struct {
 	ID    uint
 	Nomor int
 	Teks  string
+	Jenis string
+	Poin  int
 	Opsi  []OpsiSoalSiswa
 	Kunci string
 }
@@ -45,6 +50,7 @@ type AsesmenSiswaItem struct {
 	JadwalSelesai *string            `json:"jadwal_selesai,omitempty"`
 	Status        string             `json:"status"` // "aktif" | "selesai" | "terkunci" | "berakhir"
 	Nilai         *int               `json:"nilai,omitempty"`
+	PerluDinilai  bool               `json:"perlu_dinilai"`
 	NilaiMaks     int                `json:"nilai_maks"`
 }
 
@@ -125,11 +131,21 @@ func parseSoalJSON(raw string) []soalInternal {
 				break
 			}
 		}
+		jenis := "pilihan_ganda"
+		if value, ok := item["jenis"].(string); ok && strings.EqualFold(strings.TrimSpace(value), "esai") {
+			jenis = "esai"
+		}
+		poin := 1
+		if value, ok := item["poin"].(float64); ok && value >= 1 {
+			poin = int(value)
+		}
 
 		list = append(list, soalInternal{
 			ID:    id,
 			Nomor: nomor,
 			Teks:  teks,
+			Jenis: jenis,
+			Poin:  poin,
 			Opsi:  opsiList,
 			Kunci: kunci,
 		})
@@ -175,9 +191,15 @@ func getAsesmenInfo(k models.Kuis, siswaID uint) (AsesmenSiswaItem, []soalIntern
 	now := time.Now()
 	status := "aktif"
 	var nilai *int
+	perluDinilai := false
 
 	if (hasSesi && sesi.SudahDikirim) || hasPengumpulan {
 		status = "selesai"
+		jawaban := pengumpulan.Jawaban
+		if hasSesi {
+			jawaban = sesi.JawabanDraft
+		}
+		_, _, perluDinilai = guruHitungNilaiAsesmen(guruBacaSoal(k.Soal), guruBacaJawaban(jawaban), guruBacaNilaiEsai(jawaban))
 		if hasSesi && sesi.Nilai != nil {
 			nilai = sesi.Nilai
 		} else if hasPengumpulan && pengumpulan.Nilai != nil {
@@ -216,6 +238,7 @@ func getAsesmenInfo(k models.Kuis, siswaID uint) (AsesmenSiswaItem, []soalIntern
 		JadwalSelesai: jSelesaiStr,
 		Status:        status,
 		Nilai:         nilai,
+		PerluDinilai:  perluDinilai,
 		NilaiMaks:     100,
 	}
 
@@ -295,6 +318,7 @@ func GetSiswaAsesmenByID(c *gin.Context) {
 			ID:    s.ID,
 			Nomor: s.Nomor,
 			Teks:  s.Teks,
+			Jenis: s.Jenis,
 			Opsi:  s.Opsi,
 		})
 	}
@@ -434,7 +458,10 @@ func SimpanJawabanSiswaAsesmen(c *gin.Context) {
 
 	bytes, _ := json.Marshal(input.Jawaban)
 	sesi.JawabanDraft = string(bytes)
-	config.DB.Save(&sesi)
+	if err := config.DB.Save(&sesi).Error; err != nil {
+		sendSiswaError(c, http.StatusInternalServerError, "Jawaban draft gagal disimpan")
+		return
+	}
 
 	sendSiswaSuccess(c, http.StatusOK, "Jawaban draft berhasil disimpan", nil)
 }
@@ -474,7 +501,10 @@ func KirimSiswaAsesmen(c *gin.Context) {
 	var input struct {
 		Jawaban map[string]string `json:"jawaban"`
 	}
-	_ = c.ShouldBindJSON(&input)
+	if err := c.ShouldBindJSON(&input); err != nil {
+		sendSiswaError(c, http.StatusBadRequest, "Format jawaban tidak valid")
+		return
+	}
 
 	jawabanMap := input.Jawaban
 	if len(jawabanMap) == 0 && sesi != nil && sesi.JawabanDraft != "" {
@@ -484,16 +514,15 @@ func KirimSiswaAsesmen(c *gin.Context) {
 		jawabanMap = make(map[string]string)
 	}
 
-	// Hitung nilai pilihan ganda
 	correct := 0
-	total := len(parsedSoal)
-
+	totalPoin, didapatPoin := 0, 0
+	perluDinilai := false
 	for _, q := range parsedSoal {
-		kunci := strings.ToUpper(strings.TrimSpace(q.Kunci))
-		if kunci == "" {
-			continue
+		poin := q.Poin
+		if poin < 1 {
+			poin = 1
 		}
-
+		totalPoin += poin
 		ans := ""
 		if val, exists := jawabanMap[strconv.Itoa(int(q.ID))]; exists {
 			ans = val
@@ -501,65 +530,71 @@ func KirimSiswaAsesmen(c *gin.Context) {
 			ans = val
 		}
 
-		if strings.ToUpper(strings.TrimSpace(ans)) == kunci {
+		if q.Jenis == "esai" {
+			perluDinilai = true
+		} else if q.Kunci != "" && strings.EqualFold(strings.TrimSpace(ans), strings.TrimSpace(q.Kunci)) {
+			didapatPoin += poin
 			correct++
 		}
 	}
 
-	nilai := 100
-	if total > 0 {
-		nilai = int(math.Round(float64(correct) / float64(total) * 100.0))
+	var nilai *int
+	if !perluDinilai {
+		score := 100
+		if totalPoin > 0 {
+			score = int(math.Round(float64(didapatPoin) / float64(totalPoin) * 100.0))
+		}
+		nilai = &score
 	}
 
 	now := time.Now()
-	jawabanBytes, _ := json.Marshal(jawabanMap)
+	jawabanBytes, _ := json.Marshal(map[string]interface{}{
+		"jawaban": jawabanMap, "nilai_essay": map[string]int{},
+	})
 	jawabanStr := string(jawabanBytes)
 
-	// Simpan di sesi
-	if sesi != nil {
-		sesi.SudahDikirim = true
-		sesi.DikirimAt = &now
-		sesi.Nilai = &nilai
-		sesi.JawabanDraft = jawabanStr
-		config.DB.Save(sesi)
-	} else {
-		waktuMulai := now.Add(-time.Duration(info.DurasiMenit) * time.Minute)
-		newSesi := models.SiswaAsesmenSesi{
-			KuisID:       kuis.ID,
-			SiswaID:      siswa.ID,
-			WaktuMulai:   waktuMulai,
-			WaktuSelesai: now,
-			JawabanDraft: jawabanStr,
-			SudahDikirim: true,
-			DikirimAt:    &now,
-			Nilai:        &nilai,
-			NilaiMaks:    100,
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if sesi != nil {
+			sesi.SudahDikirim = true
+			sesi.DikirimAt = &now
+			sesi.Nilai = nilai
+			sesi.JawabanDraft = jawabanStr
+			if err := tx.Save(sesi).Error; err != nil {
+				return err
+			}
+		} else {
+			waktuMulai := now.Add(-time.Duration(info.DurasiMenit) * time.Minute)
+			sesi = &models.SiswaAsesmenSesi{
+				KuisID: kuis.ID, SiswaID: siswa.ID, WaktuMulai: waktuMulai, WaktuSelesai: now,
+				JawabanDraft: jawabanStr, SudahDikirim: true, DikirimAt: &now, Nilai: nilai, NilaiMaks: 100,
+			}
+			if err := tx.Create(sesi).Error; err != nil {
+				return err
+			}
 		}
-		config.DB.Create(&newSesi)
-	}
 
-	// Simpan juga ke PengumpulanKuis agar guru dapat melihat di pengumpulan-kuis
-	var pengumpulan models.PengumpulanKuis
-	if config.DB.Where("kuis_id = ? AND siswa_id = ?", kuis.ID, siswa.ID).First(&pengumpulan).Error == nil {
-		pengumpulan.Jawaban = jawabanStr
-		pengumpulan.Nilai = &nilai
-		pengumpulan.WaktuSelesai = now
-		config.DB.Save(&pengumpulan)
-	} else {
-		pengumpulan = models.PengumpulanKuis{
-			KuisID:       kuis.ID,
-			SiswaID:      siswa.ID,
-			Jawaban:      jawabanStr,
-			Nilai:        &nilai,
-			WaktuMulai:   now,
-			WaktuSelesai: now,
+		var pengumpulan models.PengumpulanKuis
+		err := tx.Where("kuis_id = ? AND siswa_id = ?", kuis.ID, siswa.ID).First(&pengumpulan).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
 		}
-		config.DB.Create(&pengumpulan)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			pengumpulan = models.PengumpulanKuis{KuisID: kuis.ID, SiswaID: siswa.ID, WaktuMulai: now}
+		}
+		pengumpulan.Jawaban = jawabanStr
+		pengumpulan.Nilai = nilai
+		pengumpulan.WaktuSelesai = now
+		return tx.Save(&pengumpulan).Error
+	})
+	if err != nil {
+		sendSiswaError(c, http.StatusInternalServerError, "Jawaban asesmen gagal disimpan")
+		return
 	}
 
 	sendSiswaSuccess(c, http.StatusOK, "Asesmen berhasil dikirim", gin.H{
 		"sudah_dikirim": true,
 		"nilai":         nilai,
 		"nilai_maks":    100,
+		"perlu_dinilai": perluDinilai,
 	})
 }
