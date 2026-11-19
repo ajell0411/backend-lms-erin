@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"e-class-backend/config"
 	"e-class-backend/models"
@@ -24,6 +25,7 @@ type guruSoal struct {
 	ID         int        `json:"id"`
 	Nomor      int        `json:"nomor"`
 	Teks       string     `json:"teks"`
+	Jenis      string     `json:"jenis,omitempty"`
 	Opsi       []guruOpsi `json:"opsi"`
 	Kunci      string     `json:"kunci"`
 	Poin       int        `json:"poin,omitempty"`
@@ -32,6 +34,7 @@ type guruSoal struct {
 
 type guruSoalInput struct {
 	Teks       string     `json:"teks"`
+	Jenis      string     `json:"jenis"`
 	Poin       int        `json:"poin"`
 	Opsi       []guruOpsi `json:"opsi"`
 	Kunci      string     `json:"kunci"`
@@ -59,6 +62,20 @@ func guruBacaSoal(raw string) []guruSoal {
 	}
 	if tmp != nil {
 		out = tmp
+		for i := range out {
+			if out[i].ID < 1 {
+				out[i].ID = i + 1
+			}
+			if out[i].Nomor < 1 {
+				out[i].Nomor = i + 1
+			}
+			if out[i].Jenis != "esai" {
+				out[i].Jenis = "pilihan_ganda"
+			}
+			if out[i].Opsi == nil {
+				out[i].Opsi = []guruOpsi{}
+			}
+		}
 	}
 	return out
 }
@@ -368,6 +385,22 @@ func guruValidasiSoal(in *guruSoalInput) string {
 	if in.Teks == "" {
 		return "Teks soal wajib diisi"
 	}
+	in.Jenis = strings.ToLower(strings.TrimSpace(in.Jenis))
+	if in.Jenis == "" {
+		in.Jenis = "pilihan_ganda"
+	}
+	if in.Jenis != "pilihan_ganda" && in.Jenis != "esai" {
+		return "Jenis soal tidak valid"
+	}
+	if in.Poin < 1 {
+		return "Poin soal minimal 1"
+	}
+	in.Pembahasan = strings.TrimSpace(in.Pembahasan)
+	if in.Jenis == "esai" {
+		in.Opsi = []guruOpsi{}
+		in.Kunci = ""
+		return ""
+	}
 	if len(in.Opsi) < 2 || len(in.Opsi) > 6 {
 		return "Isi minimal 2 dan maksimal 6 opsi jawaban"
 	}
@@ -389,11 +422,7 @@ func guruValidasiSoal(in *guruSoalInput) string {
 	if !adaKunci {
 		return "Pilih kunci jawaban yang benar"
 	}
-	if in.Poin < 0 {
-		in.Poin = 0
-	}
 	in.Opsi = opsi
-	in.Pembahasan = strings.TrimSpace(in.Pembahasan)
 	return ""
 }
 
@@ -422,7 +451,7 @@ func TambahGuruSoal(c *gin.Context) {
 			maks = s.ID
 		}
 	}
-	soal = append(soal, guruSoal{ID: maks + 1, Teks: in.Teks, Opsi: in.Opsi, Kunci: in.Kunci, Poin: in.Poin, Pembahasan: in.Pembahasan})
+	soal = append(soal, guruSoal{ID: maks + 1, Teks: in.Teks, Jenis: in.Jenis, Opsi: in.Opsi, Kunci: in.Kunci, Poin: in.Poin, Pembahasan: in.Pembahasan})
 	if err := guruSimpanSoal(k.ID, soal); err != nil {
 		guruPortalGagal(c, http.StatusInternalServerError, "Soal gagal disimpan")
 		return
@@ -455,7 +484,7 @@ func UbahGuruSoal(c *gin.Context) {
 		return
 	}
 	idx := nomor - 1
-	soal[idx] = guruSoal{ID: soal[idx].ID, Teks: in.Teks, Opsi: in.Opsi, Kunci: in.Kunci, Poin: in.Poin, Pembahasan: in.Pembahasan}
+	soal[idx] = guruSoal{ID: soal[idx].ID, Teks: in.Teks, Jenis: in.Jenis, Opsi: in.Opsi, Kunci: in.Kunci, Poin: in.Poin, Pembahasan: in.Pembahasan}
 	if err := guruSimpanSoal(k.ID, soal); err != nil {
 		guruPortalGagal(c, http.StatusInternalServerError, "Soal gagal disimpan")
 		return
@@ -513,6 +542,8 @@ func MuridGuruAsesmen(c *gin.Context) {
 			if ss.SudahDikirim {
 				row["status"] = "selesai"
 				row["nilai"] = ss.Nilai
+				_, _, perluDinilai := guruHitungNilaiAsesmen(guruBacaSoal(k.Soal), guruBacaJawaban(ss.JawabanDraft), guruBacaNilaiEsai(ss.JawabanDraft))
+				row["perlu_dinilai"] = perluDinilai
 				if ss.DikirimAt != nil {
 					row["waktu_kumpul"] = *ss.DikirimAt
 					row["terlambat"] = ss.DikirimAt.After(k.Deadline)
@@ -549,36 +580,196 @@ func HasilGuruAsesmen(c *gin.Context) {
 	}
 	jawab := guruBacaJawaban(sesi.JawabanDraft)
 	soal := guruBacaSoal(k.Soal)
-	benar := 0
+	nilaiEsai := guruBacaNilaiEsai(sesi.JawabanDraft)
+	nilai, benar, perluDinilai := guruHitungNilaiAsesmen(soal, jawab, nilaiEsai)
 	detail := make([]gin.H, 0, len(soal))
 	for _, s := range soal {
+		jenis := s.Jenis
+		if jenis == "" {
+			jenis = "pilihan_ganda"
+		}
 		jw := jawab[s.ID]
 		if jw == "" {
 			jw = jawab[s.Nomor]
 		}
-		betul := jw != "" && strings.EqualFold(jw, s.Kunci)
-		if betul {
-			benar++
+		betul := jenis == "pilihan_ganda" && jw != "" && strings.EqualFold(jw, s.Kunci)
+		var nilaiDiberikan interface{}
+		if score, exists := nilaiEsai[s.ID]; exists {
+			nilaiDiberikan = score
 		}
 		opsi := s.Opsi
 		if opsi == nil {
 			opsi = []guruOpsi{}
 		}
 		detail = append(detail, gin.H{
-			"nomor": s.Nomor, "teks": s.Teks, "opsi": opsi, "kunci": s.Kunci,
-			"jawaban": jw, "benar": betul, "poin": s.Poin, "pembahasan": s.Pembahasan,
+			"id": s.ID, "nomor": s.Nomor, "teks": s.Teks, "jenis": jenis, "opsi": opsi, "kunci": s.Kunci,
+			"jawaban": jw, "benar": betul, "poin": guruSoalPoin(s), "nilai_diberikan": nilaiDiberikan,
+			"pembahasan": s.Pembahasan,
 		})
 	}
 	var waktu interface{}
 	if sesi.DikirimAt != nil {
 		waktu = *sesi.DikirimAt
 	}
+	if !perluDinilai {
+		sesi.Nilai = nilai
+	}
 	lulus := sesi.Nilai != nil && *sesi.Nilai >= guruKKM
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
 		"asesmen_judul": k.Judul, "kelas_nama": k.Kelas.Nama, "pelajaran_nama": k.Pelajaran.Nama,
 		"siswa_id": siswa.ID, "siswa_nama": siswa.Nama, "siswa_nisn": guruPortalString(siswa.NISN), "siswa_foto": siswa.FotoURL,
 		"nilai": sesi.Nilai, "nilai_maks": sesi.NilaiMaks, "lulus": lulus, "kkm": guruKKM,
-		"jumlah_benar": benar, "jumlah_soal": len(soal), "waktu_kumpul": waktu, "sudah_dikirim": sesi.SudahDikirim,
+		"jumlah_benar": benar, "jumlah_soal": len(soal), "perlu_dinilai": perluDinilai,
+		"waktu_kumpul": waktu, "sudah_dikirim": sesi.SudahDikirim,
 		"detail": detail,
 	}})
+}
+
+func guruSoalPoin(soal guruSoal) int {
+	if soal.Poin < 1 {
+		return 1
+	}
+	return soal.Poin
+}
+
+func guruBacaNilaiEsai(raw string) map[int]int {
+	result := map[int]int{}
+	var envelope struct {
+		NilaiEsai map[string]int `json:"nilai_essay"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		return result
+	}
+	for rawID, score := range envelope.NilaiEsai {
+		if id, err := strconv.Atoi(rawID); err == nil && id > 0 {
+			result[id] = score
+		}
+	}
+	return result
+}
+
+func guruHitungNilaiAsesmen(soal []guruSoal, jawaban map[int]string, nilaiEsai map[int]int) (*int, int, bool) {
+	totalPoin, didapat, benar := 0, 0, 0
+	perluDinilai := false
+	for _, item := range soal {
+		poin := guruSoalPoin(item)
+		totalPoin += poin
+		jenis := item.Jenis
+		if jenis == "" {
+			jenis = "pilihan_ganda"
+		}
+		if jenis == "esai" {
+			nilai, exists := nilaiEsai[item.ID]
+			if !exists {
+				nilai, exists = nilaiEsai[item.Nomor]
+			}
+			if !exists {
+				perluDinilai = true
+				continue
+			}
+			didapat += nilai
+			continue
+		}
+		answer := jawaban[item.ID]
+		if answer == "" {
+			answer = jawaban[item.Nomor]
+		}
+		if answer != "" && strings.EqualFold(answer, item.Kunci) {
+			didapat += poin
+			benar++
+		}
+	}
+	if perluDinilai {
+		return nil, benar, true
+	}
+	score := 100
+	if totalPoin > 0 {
+		score = int(float64(didapat)*100/float64(totalPoin) + 0.5)
+	}
+	return &score, benar, false
+}
+
+func NilaiEsaiGuruAsesmen(c *gin.Context) {
+	guruID, ok := guruPortalID(c)
+	if !ok {
+		return
+	}
+	kuis, ok := guruKuisMilik(c, guruID)
+	if !ok {
+		return
+	}
+	siswaID := guruAtoiUint(c.Param("siswa_id"))
+	var sesi models.SiswaAsesmenSesi
+	if siswaID == 0 || config.DB.Where("kuis_id = ? AND siswa_id = ? AND sudah_dikirim = ?", kuis.ID, siswaID, true).First(&sesi).Error != nil {
+		guruPortalGagal(c, http.StatusNotFound, "Hasil asesmen siswa tidak ditemukan")
+		return
+	}
+	var input struct {
+		NilaiEsai map[string]int `json:"nilai_essay"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		guruPortalGagal(c, http.StatusBadRequest, "Format nilai esai tidak valid")
+		return
+	}
+	questions := guruBacaSoal(kuis.Soal)
+	currentGrades := guruBacaNilaiEsai(sesi.JawabanDraft)
+	for rawID, score := range input.NilaiEsai {
+		id, err := strconv.Atoi(rawID)
+		if err != nil || id < 1 {
+			guruPortalGagal(c, http.StatusBadRequest, "ID soal esai tidak valid")
+			return
+		}
+		found := false
+		for _, question := range questions {
+			jenis := question.Jenis
+			if jenis == "" {
+				jenis = "pilihan_ganda"
+			}
+			if question.ID == id && jenis == "esai" {
+				found = true
+				if score < 0 || score > guruSoalPoin(question) {
+					guruPortalGagal(c, http.StatusBadRequest, "Nilai esai harus berada di antara 0 dan poin maksimum")
+					return
+				}
+				break
+			}
+		}
+		if !found {
+			guruPortalGagal(c, http.StatusBadRequest, "Soal esai tidak ditemukan")
+			return
+		}
+		currentGrades[id] = score
+	}
+	answers := guruBacaJawaban(sesi.JawabanDraft)
+	finalScore, _, pending := guruHitungNilaiAsesmen(questions, answers, currentGrades)
+	envelope, err := json.Marshal(map[string]interface{}{
+		"jawaban": answers, "nilai_essay": currentGrades,
+	})
+	if err != nil {
+		guruPortalGagal(c, http.StatusInternalServerError, "Nilai esai gagal disimpan")
+		return
+	}
+	updates := map[string]interface{}{"jawaban_draft": string(envelope)}
+	if pending {
+		updates["nilai"] = nil
+	} else {
+		updates["nilai"] = *finalScore
+	}
+	if err := config.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&sesi).Updates(updates).Error; err != nil {
+			return err
+		}
+		if !pending {
+			return tx.Model(&models.PengumpulanKuis{}).
+				Where("kuis_id = ? AND siswa_id = ?", kuis.ID, siswaID).
+				Update("nilai", *finalScore).Error
+		}
+		return nil
+	}); err != nil {
+		guruPortalGagal(c, http.StatusInternalServerError, "Nilai esai gagal disimpan")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true, "data": gin.H{"nilai": finalScore, "perlu_dinilai": pending},
+	})
 }
