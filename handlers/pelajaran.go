@@ -86,6 +86,11 @@ func CreatePelajaran(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errInvalidGuruIDs.Error()})
 		return
 	}
+	for _, guru := range guruList {
+		if !validateGuruSubjectLimit(c, guru.ID, nil, true, 0, true) {
+			return
+		}
+	}
 	item := models.Pelajaran{Nama: strings.TrimSpace(*input.Nama), Kode: strings.TrimSpace(*input.Kode)}
 	err = config.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&item).Error; err != nil {
@@ -189,6 +194,11 @@ func UpdatePelajaran(c *gin.Context) {
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": errInvalidGuruIDs.Error()})
 			return
+		}
+		for _, guru := range guruList {
+			if !validateGuruSubjectLimit(c, guru.ID, []uint{item.ID}, true, item.ID, false) {
+				return
+			}
 		}
 	}
 	err := config.DB.Transaction(func(tx *gorm.DB) error {
