@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -27,10 +28,30 @@ type siswaInput struct {
 	Telepon      *string      `json:"telepon"`
 	NamaWali     *string      `json:"nama_wali"`
 	TeleponWali  *string      `json:"telepon_wali"`
-	TahunMasuk   *int         `json:"tahun_masuk"`
+	TahunMasuk   optionalInt  `json:"tahun_masuk"`
+	TahunLulus   optionalInt  `json:"tahun_lulus"`
 	Status       *string      `json:"status"`
 	FotoURL      *string      `json:"foto_url"`
 	KelasID      optionalUint `json:"kelas_id"`
+}
+
+type optionalInt struct {
+	Set   bool
+	Value *int
+}
+
+func (value *optionalInt) UnmarshalJSON(data []byte) error {
+	value.Set = true
+	if string(data) == "null" {
+		value.Value = nil
+		return nil
+	}
+	var year int
+	if err := json.Unmarshal(data, &year); err != nil {
+		return err
+	}
+	value.Value = &year
+	return nil
 }
 
 func siswaJSON(user models.User) gin.H {
@@ -60,7 +81,7 @@ func siswaJSON(user models.User) gin.H {
 		"id": user.ID, "nama": user.Nama, "username": username, "email": user.Email, "role": user.Role,
 		"nisn": nisn, "jenis_kelamin": user.JenisKelamin, "tempat_lahir": user.TempatLahir,
 		"tanggal_lahir": tanggalLahir, "alamat": user.Alamat, "telepon": user.Telepon,
-		"nama_wali": user.NamaWali, "telepon_wali": user.TeleponWali, "tahun_masuk": user.TahunMasuk,
+		"nama_wali": user.NamaWali, "telepon_wali": user.TeleponWali, "tahun_masuk": user.TahunMasuk, "tahun_lulus": user.TahunLulus,
 		"status": user.Status, "foto_url": user.FotoURL, "kelas_id": kelasID,
 		"nama_kelas": namaKelas, "jurusan_id": jurusanID, "nama_jurusan": namaJurusan,
 		"created_at": user.CreatedAt,
@@ -88,6 +109,10 @@ func validateSiswaInput(c *gin.Context, input siswaInput, creating bool) bool {
 	}
 	if input.Status != nil && *input.Status != "aktif" && *input.Status != "nonaktif" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Status harus aktif atau nonaktif"})
+		return false
+	}
+	if input.TahunMasuk.Value != nil && input.TahunLulus.Value != nil && *input.TahunLulus.Value < *input.TahunMasuk.Value {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tahun lulus tidak boleh sebelum tahun masuk"})
 		return false
 	}
 	if input.JenisKelamin != nil && *input.JenisKelamin != "" && !validJenisKelamin(*input.JenisKelamin) {
@@ -159,7 +184,7 @@ func CreateSiswa(c *gin.Context) {
 		TempatLahir: normalizeOptional(input.TempatLahir), TanggalLahir: tanggalLahir,
 		Alamat: normalizeOptional(input.Alamat), Telepon: normalizeOptional(input.Telepon),
 		NamaWali: normalizeOptional(input.NamaWali), TeleponWali: normalizeOptional(input.TeleponWali),
-		TahunMasuk: input.TahunMasuk, Status: normalizeOptional(input.Status), FotoURL: normalizeOptional(input.FotoURL),
+		TahunMasuk: input.TahunMasuk.Value, TahunLulus: input.TahunLulus.Value, Status: normalizeOptional(input.Status), FotoURL: normalizeOptional(input.FotoURL),
 		KelasID: input.KelasID.Value,
 	}
 	if input.NISN != nil && strings.TrimSpace(*input.NISN) != "" {
@@ -305,8 +330,11 @@ func UpdateSiswa(c *gin.Context) {
 	if input.TeleponWali != nil {
 		updates["telepon_wali"] = normalizeOptional(input.TeleponWali)
 	}
-	if input.TahunMasuk != nil {
-		updates["tahun_masuk"] = *input.TahunMasuk
+	if input.TahunMasuk.Set {
+		updates["tahun_masuk"] = input.TahunMasuk.Value
+	}
+	if input.TahunLulus.Set {
+		updates["tahun_lulus"] = input.TahunLulus.Value
 	}
 	if input.Status != nil {
 		updates["status"] = *input.Status
