@@ -211,7 +211,7 @@ func BackfillGuruKelas() {
 	if config.DB == nil {
 		return
 	}
-	for _, tabel := range []string{"materis", "tugas", "kuis"} {
+	for _, tabel := range []string{"materis", "tugas", "kuis", "jadwals"} {
 		config.DB.Exec("INSERT OR IGNORE INTO guru_kelas (guru_id, kelas_id, pelajaran_id, created_at) " +
 			"SELECT DISTINCT guru_id, kelas_id, pelajaran_id, CURRENT_TIMESTAMP FROM " + tabel)
 	}
