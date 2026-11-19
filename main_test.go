@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -124,6 +125,9 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	class := apiRequest(t, router, http.MethodPost, "/kelas", map[string]any{"nama": "X Test 1", "tingkat": "X", "jurusan_id": majorID}, adminToken)
 	assertStatus(t, class, http.StatusCreated)
 	classID := int(decodeObject(t, class)["id"].(float64))
+	otherClass := apiRequest(t, router, http.MethodPost, "/kelas", map[string]any{"nama": "X Test 2", "tingkat": "X", "jurusan_id": majorID}, adminToken)
+	assertStatus(t, otherClass, http.StatusCreated)
+	otherClassID := int(decodeObject(t, otherClass)["id"].(float64))
 	classList := apiRequest(t, router, http.MethodGet, "/kelas?jurusan_id="+jsonNumber(majorID), nil, adminToken)
 	assertStatus(t, classList, http.StatusOK)
 	assertListHasID(t, classList, classID)
@@ -161,8 +165,25 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	if len(decodeObject(t, teacherSubjects)["pelajaran_ids"].([]any)) != 2 {
 		t.Fatal("teacher update must keep both selected subjects")
 	}
+	var teacherRows []map[string]any
+	if err := json.Unmarshal(apiRequest(t, router, http.MethodGet, "/guru?search=Test+Teacher", nil, adminToken).Body.Bytes(), &teacherRows); err != nil {
+		t.Fatal(err)
+	}
+	foundTwoSubjects := false
+	for _, row := range teacherRows {
+		if int(row["id"].(float64)) == teacherID && len(row["pelajaran_ids"].([]any)) == 2 &&
+			strings.Contains(row["nama_pelajaran"].(string), "Updated Subject") &&
+			strings.Contains(row["nama_pelajaran"].(string), "Second Subject") {
+			foundTwoSubjects = true
+		}
+	}
+	if !foundTwoSubjects {
+		t.Fatalf("teacher list must return both subject names: %#v", teacherRows)
+	}
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"pelajaran_ids": []int{subjectID, secondSubjectID, subjectID + 100}}, adminToken), http.StatusBadRequest)
+	assertStatus(t, apiRequest(t, router, http.MethodPut, "/kelas/"+jsonNumber(classID), map[string]any{"wali_kelas_id": teacherID}, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": classID, "pelajaran_id": subjectID}, adminToken), http.StatusCreated)
+	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": otherClassID, "pelajaran_id": subjectID}, adminToken), http.StatusCreated)
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": classID, "pelajaran_id": secondSubjectID}, adminToken), http.StatusCreated)
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/admin/guru-kelas", map[string]any{"guru_id": teacherID, "kelas_id": classID, "pelajaran_id": thirdSubjectID}, adminToken), http.StatusBadRequest)
 	assertStatus(t, apiRequest(t, router, http.MethodPut, "/guru/"+jsonNumber(teacherID), map[string]any{"nama": "Updated Teacher", "nip": "987654321"}, adminToken), http.StatusOK)
@@ -203,6 +224,7 @@ func TestAdminCRUDRoutes(t *testing.T) {
 	assertStatus(t, apiRequest(t, router, http.MethodDelete, "/guru/"+jsonNumber(teacherID), nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodDelete, "/pelajaran/"+jsonNumber(subjectID), nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodDelete, "/kelas/"+jsonNumber(classID), nil, adminToken), http.StatusOK)
+	assertStatus(t, apiRequest(t, router, http.MethodDelete, "/kelas/"+jsonNumber(otherClassID), nil, adminToken), http.StatusOK)
 	assertStatus(t, apiRequest(t, router, http.MethodDelete, "/jurusan/"+jsonNumber(majorID), nil, adminToken), http.StatusOK)
 	for _, route := range accountRoutes {
 		id := accountIDs[route.path]
