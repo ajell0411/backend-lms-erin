@@ -51,6 +51,22 @@ func GetProfile(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, profileJSON(user))
 }
+
+func studentProfileIdentityUnchanged(user models.User, input profileInput) bool {
+	if nama := strings.TrimSpace(input.Nama); nama != "" && nama != user.Nama {
+		return false
+	}
+	if input.Username == nil {
+		return true
+	}
+	requested := normalizedUsername(input.Username)
+	current := normalizedUsername(user.Username)
+	if requested == nil || current == nil {
+		return requested == nil && current == nil
+	}
+	return *requested == *current
+}
+
 func UpdateProfile(c *gin.Context) {
 	user, ok := currentProfile(c)
 	if !ok {
@@ -62,7 +78,11 @@ func UpdateProfile(c *gin.Context) {
 		return
 	}
 	nama, email := strings.TrimSpace(input.Nama), strings.TrimSpace(input.Email)
-	if nama == "" || email == "" {
+	if user.Role == "siswa" && !studentProfileIdentityUnchanged(user, input) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Siswa tidak dapat mengubah nama atau username"})
+		return
+	}
+	if email == "" || (user.Role != "siswa" && nama == "") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama dan email wajib diisi"})
 		return
 	}
@@ -70,9 +90,12 @@ func UpdateProfile(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "Telepon hanya boleh berisi angka"})
 		return
 	}
-	updates := map[string]any{"nama": nama, "email": email, "telepon": strings.TrimSpace(input.Telepon), "alamat": strings.TrimSpace(input.Alamat), "foto_url": strings.TrimSpace(input.FotoURL)}
-	if input.Username != nil {
-		updates["username"] = normalizedUsername(input.Username)
+	updates := map[string]any{"email": email, "telepon": strings.TrimSpace(input.Telepon), "alamat": strings.TrimSpace(input.Alamat), "foto_url": strings.TrimSpace(input.FotoURL)}
+	if user.Role != "siswa" {
+		updates["nama"] = nama
+		if input.Username != nil {
+			updates["username"] = normalizedUsername(input.Username)
+		}
 	}
 	if err := config.DB.Model(&user).Updates(updates).Error; err != nil {
 		respondAccountWriteError(c, err)
