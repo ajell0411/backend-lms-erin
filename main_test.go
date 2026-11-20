@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bytes"
@@ -9,10 +9,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"e-class-backend/config"
+	"e-class-backend/models"
 )
 
 func apiRequest(t *testing.T, router http.Handler, method, path string, payload any, token string) *httptest.ResponseRecorder {
@@ -215,6 +217,99 @@ func TestAdminCRUDRoutes(t *testing.T) {
 
 	kurikulumToken := loginToken(t, router, "crud_admin_kurikulum", "CrudPass123")
 	assertStatus(t, apiRequest(t, router, http.MethodPost, "/pelajaran", map[string]any{"nama": "Denied", "kode": "DENIED"}, kurikulumToken), http.StatusForbidden)
+	teacherToken := loginToken(t, router, "test_teacher", "CrudPass123")
+	taskResponse := apiRequest(t, router, http.MethodPost, "/tugas", map[string]any{
+		"judul": "Test Homework", "deadline": "2026-10-01T23:59:00Z",
+		"pelajaranId": subjectID, "kelasId": classID,
+	}, teacherToken)
+	assertStatus(t, taskResponse, http.StatusCreated)
+	taskID := uint(decodeObject(t, taskResponse)["id"].(float64))
+	taskGrade := 88
+	if err := config.DB.Create(&models.PengumpulanTugas{
+		TugasID: taskID, SiswaID: uint(studentID), Nilai: &taskGrade,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	examResponse := apiRequest(t, router, http.MethodPost, "/kuis", map[string]any{
+		"judul": "Test Exam", "jenis": "ujian_harian", "deadline": "2026-10-02T23:59:00Z",
+		"pelajaranId": subjectID, "kelasId": classID,
+	}, teacherToken)
+	assertStatus(t, examResponse, http.StatusCreated)
+	examID := uint(decodeObject(t, examResponse)["id"].(float64))
+	examGrade := 92
+	submittedAt := time.Now()
+	if err := config.DB.Create(&models.SiswaAsesmenSesi{
+		KuisID: examID, SiswaID: uint(studentID), Nilai: &examGrade,
+		NilaiMaks: 100, SudahDikirim: true, DikirimAt: &submittedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacyQuizResponse := apiRequest(t, router, http.MethodPost, "/kuis", map[string]any{
+		"judul": "Legacy Quiz", "jenis": "kuis", "deadline": "2026-10-03T23:59:00Z",
+		"pelajaranId": subjectID, "kelasId": classID,
+	}, teacherToken)
+	assertStatus(t, legacyQuizResponse, http.StatusCreated)
+	legacyQuizID := uint(decodeObject(t, legacyQuizResponse)["id"].(float64))
+	legacyQuizGrade := 76
+	if err := config.DB.Create(&models.PengumpulanKuis{
+		KuisID: legacyQuizID, SiswaID: uint(studentID), Nilai: &legacyQuizGrade,
+		WaktuSelesai: submittedAt,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	for _, row := range []struct {
+		username string
+		role     string
+	}{
+		{username: "crud_admin_kurikulum", role: "admin_kurikulum"},
+		{username: "crud_kepala_sekolah", role: "kepala_sekolah"},
+	} {
+		token := loginToken(t, router, row.username, "CrudPass123")
+		response := apiRequest(t, router, http.MethodGet, "/pemantauan/nilai", nil, token)
+		assertStatus(t, response, http.StatusOK)
+		rows := decodeObject(t, response)["data"].([]any)
+		foundTask, foundExam, foundLegacyQuiz := false, false, false
+		for _, raw := range rows {
+			item := raw.(map[string]any)
+			if item["siswa_nama"] != "Updated Student Again" {
+				continue
+			}
+			if item["judul"] == "Test Homework" && item["jenis"] == "Tugas" && item["nilai"] == float64(taskGrade) {
+				foundTask = true
+			}
+			if item["judul"] == "Test Exam" && item["jenis"] == "Ujian" && item["nilai"] == float64(examGrade) {
+				foundExam = true
+			}
+			if item["judul"] == "Legacy Quiz" && item["jenis"] == "Kuis" && item["nilai"] == float64(legacyQuizGrade) {
+				foundLegacyQuiz = true
+			}
+		}
+		if !foundTask || !foundExam || !foundLegacyQuiz {
+			t.Fatalf("%s response did not contain task, exam, and legacy quiz grades: %#v", row.role, rows)
+		}
+	}
+	assertStatus(t, apiRequest(t, router, http.MethodGet, "/pemantauan/nilai", nil, adminToken), http.StatusForbidden)
+	assertStatus(t, apiRequest(t, router, http.MethodGet, "/pemantauan/nilai", nil, teacherToken), http.StatusForbidden)
+	if err := config.DB.Where("tugas_id = ?", taskID).Delete(&models.PengumpulanTugas{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := config.DB.Delete(&models.Tugas{}, taskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := config.DB.Where("kuis_id = ?", examID).Delete(&models.SiswaAsesmenSesi{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := config.DB.Delete(&models.Kuis{}, examID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := config.DB.Where("kuis_id = ?", legacyQuizID).Delete(&models.PengumpulanKuis{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := config.DB.Delete(&models.Kuis{}, legacyQuizID).Error; err != nil {
+		t.Fatal(err)
+	}
 	studentToken := loginToken(t, router, "test_student", "CrudPass123")
 	for _, path := range []string{"/jurusan", "/kelas", "/pelajaran"} {
 		assertStatus(t, apiRequest(t, router, http.MethodGet, path, nil, studentToken), http.StatusForbidden)

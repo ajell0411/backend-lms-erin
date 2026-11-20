@@ -28,6 +28,7 @@ func guruKelasJSON(gk models.GuruKelas) gin.H {
 		"kelas_id":       gk.KelasID,
 		"kelas_nama":     gk.Kelas.Nama,
 		"tingkat":        gk.Kelas.Tingkat,
+		"jurusan_nama":   gk.Kelas.Jurusan.Nama,
 		"pelajaran_id":   gk.PelajaranID,
 		"pelajaran_nama": gk.Pelajaran.Nama,
 		"jumlah_siswa":   jumlah,
@@ -41,7 +42,7 @@ func ListGuruKelas(c *gin.Context) {
 		return
 	}
 	var data []models.GuruKelas
-	config.DB.Preload("Kelas").Preload("Pelajaran").Where("guru_id = ?", guruID).Order("id ASC").Find(&data)
+	config.DB.Preload("Kelas").Preload("Kelas.Jurusan").Preload("Pelajaran").Where("guru_id = ?", guruID).Order("id ASC").Find(&data)
 	out := make([]gin.H, 0, len(data))
 	for _, gk := range data {
 		out = append(out, guruKelasJSON(gk))

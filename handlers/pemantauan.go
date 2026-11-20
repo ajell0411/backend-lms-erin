@@ -81,6 +81,197 @@ func GetPemantauanStatistik(c *gin.Context) {
         "jurusan":          jurusanStat,
     }})
 }
+
+type PemantauanNilaiItem struct {
+	ID            string    `json:"id"`
+	SiswaID       uint      `json:"siswa_id"`
+	SiswaNama     string    `json:"siswa_nama"`
+	NISN          string    `json:"nisn"`
+	KelasID       uint      `json:"kelas_id"`
+	KelasNama     string    `json:"kelas_nama"`
+	JurusanNama   string    `json:"jurusan_nama"`
+	PelajaranID   uint      `json:"pelajaran_id"`
+	PelajaranNama string    `json:"pelajaran_nama"`
+	GuruNama      string    `json:"guru_nama"`
+	Jenis         string    `json:"jenis"`
+	Judul         string    `json:"judul"`
+	Nilai         *int      `json:"nilai"`
+	NilaiMaks     int       `json:"nilai_maks"`
+	Status        string    `json:"status"`
+	Waktu         time.Time `json:"waktu"`
+}
+
+func ListPemantauanNilai(c *gin.Context) {
+	db := config.DB
+
+	var pengumpulanTugas []models.PengumpulanTugas
+	if err := db.Order("waktu_submit DESC").Find(&pengumpulanTugas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat nilai tugas"})
+		return
+	}
+	var sesiAsesmen []models.SiswaAsesmenSesi
+	if err := db.Where("sudah_dikirim = ?", true).Order("dikirim_at DESC").Find(&sesiAsesmen).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat nilai asesmen"})
+		return
+	}
+	var pengumpulanKuis []models.PengumpulanKuis
+	if err := db.Find(&pengumpulanKuis).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat pengumpulan kuis"})
+		return
+	}
+
+	tugasIDs, kuisIDs, siswaIDs := []uint{}, []uint{}, []uint{}
+	seenTugas, seenKuis, seenSiswa := map[uint]bool{}, map[uint]bool{}, map[uint]bool{}
+	for _, row := range pengumpulanTugas {
+		if !seenTugas[row.TugasID] {
+			seenTugas[row.TugasID] = true
+			tugasIDs = append(tugasIDs, row.TugasID)
+		}
+		if !seenSiswa[row.SiswaID] {
+			seenSiswa[row.SiswaID] = true
+			siswaIDs = append(siswaIDs, row.SiswaID)
+		}
+	}
+	for _, row := range pengumpulanKuis {
+		if !seenKuis[row.KuisID] {
+			seenKuis[row.KuisID] = true
+			kuisIDs = append(kuisIDs, row.KuisID)
+		}
+		if !seenSiswa[row.SiswaID] {
+			seenSiswa[row.SiswaID] = true
+			siswaIDs = append(siswaIDs, row.SiswaID)
+		}
+	}
+	for _, row := range sesiAsesmen {
+		if !seenKuis[row.KuisID] {
+			seenKuis[row.KuisID] = true
+			kuisIDs = append(kuisIDs, row.KuisID)
+		}
+		if !seenSiswa[row.SiswaID] {
+			seenSiswa[row.SiswaID] = true
+			siswaIDs = append(siswaIDs, row.SiswaID)
+		}
+	}
+
+	tugasByID := map[uint]models.Tugas{}
+	if len(tugasIDs) > 0 {
+		var tugas []models.Tugas
+		if err := db.Preload("Kelas.Jurusan").Preload("Pelajaran").Preload("Guru").Where("id IN ?", tugasIDs).Find(&tugas).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat informasi tugas"})
+			return
+		}
+		for _, row := range tugas {
+			tugasByID[row.ID] = row
+		}
+	}
+
+	kuisByID := map[uint]models.Kuis{}
+	if len(kuisIDs) > 0 {
+		var kuis []models.Kuis
+		if err := db.Preload("Kelas.Jurusan").Preload("Pelajaran").Preload("Guru").Where("id IN ?", kuisIDs).Find(&kuis).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat informasi asesmen"})
+			return
+		}
+		for _, row := range kuis {
+			kuisByID[row.ID] = row
+		}
+	}
+
+	siswaByID := map[uint]models.User{}
+	if len(siswaIDs) > 0 {
+		var siswa []models.User
+		if err := db.Where("id IN ? AND role = ?", siswaIDs, "siswa").Find(&siswa).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat informasi siswa"})
+			return
+		}
+		for _, row := range siswa {
+			siswaByID[row.ID] = row
+		}
+	}
+
+	items := make([]PemantauanNilaiItem, 0, len(pengumpulanTugas)+len(sesiAsesmen))
+	for _, submission := range pengumpulanTugas {
+		tugas, tugasAda := tugasByID[submission.TugasID]
+		siswa, siswaAda := siswaByID[submission.SiswaID]
+		if !tugasAda || !siswaAda {
+			continue
+		}
+		status := "Dinilai"
+		if submission.Nilai == nil {
+			status = "Belum dinilai"
+		}
+		items = append(items, PemantauanNilaiItem{
+			ID: "tugas-" + strconv.Itoa(int(submission.ID)), SiswaID: siswa.ID, SiswaNama: siswa.Nama,
+			NISN: guruPortalString(siswa.NISN), KelasID: tugas.KelasID, KelasNama: tugas.Kelas.Nama,
+			JurusanNama: tugas.Kelas.Jurusan.Nama, PelajaranID: tugas.PelajaranID, PelajaranNama: tugas.Pelajaran.Nama,
+			GuruNama: tugas.Guru.Nama, Jenis: "Tugas", Judul: tugas.Judul, Nilai: submission.Nilai,
+			NilaiMaks: 100, Status: status, Waktu: submission.WaktuSubmit,
+		})
+	}
+	asesmenTerkirim := make(map[string]bool, len(sesiAsesmen))
+	for _, session := range sesiAsesmen {
+		asesmenTerkirim[strconv.Itoa(int(session.KuisID))+":"+strconv.Itoa(int(session.SiswaID))] = true
+		kuis, kuisAda := kuisByID[session.KuisID]
+		siswa, siswaAda := siswaByID[session.SiswaID]
+		if !kuisAda || !siswaAda {
+			continue
+		}
+		jenis := "Kuis"
+		if strings.EqualFold(kuis.Jenis, "ujian_harian") {
+			jenis = "Ujian"
+		}
+		status := "Dinilai"
+		if session.Nilai == nil {
+			status = "Menunggu penilaian"
+		}
+		waktu := session.WaktuSelesai
+		if session.DikirimAt != nil {
+			waktu = *session.DikirimAt
+		}
+		nilaiMaks := session.NilaiMaks
+		if nilaiMaks <= 0 {
+			nilaiMaks = 100
+		}
+		items = append(items, PemantauanNilaiItem{
+			ID: "asesmen-" + strconv.Itoa(int(session.ID)), SiswaID: siswa.ID, SiswaNama: siswa.Nama,
+			NISN: guruPortalString(siswa.NISN), KelasID: kuis.KelasID, KelasNama: kuis.Kelas.Nama,
+			JurusanNama: kuis.Kelas.Jurusan.Nama, PelajaranID: kuis.PelajaranID, PelajaranNama: kuis.Pelajaran.Nama,
+			GuruNama: kuis.Guru.Nama, Jenis: jenis, Judul: kuis.Judul, Nilai: session.Nilai,
+			NilaiMaks: nilaiMaks, Status: status, Waktu: waktu,
+		})
+	}
+	for _, submission := range pengumpulanKuis {
+		if asesmenTerkirim[strconv.Itoa(int(submission.KuisID))+":"+strconv.Itoa(int(submission.SiswaID))] {
+			continue
+		}
+		kuis, kuisAda := kuisByID[submission.KuisID]
+		siswa, siswaAda := siswaByID[submission.SiswaID]
+		if !kuisAda || !siswaAda {
+			continue
+		}
+		jenis := "Kuis"
+		if strings.EqualFold(kuis.Jenis, "ujian_harian") {
+			jenis = "Ujian"
+		}
+		status := "Dinilai"
+		if submission.Nilai == nil {
+			status = "Belum dinilai"
+		}
+		items = append(items, PemantauanNilaiItem{
+			ID: "kuis-" + strconv.Itoa(int(submission.ID)), SiswaID: siswa.ID, SiswaNama: siswa.Nama,
+			NISN: guruPortalString(siswa.NISN), KelasID: kuis.KelasID, KelasNama: kuis.Kelas.Nama,
+			JurusanNama: kuis.Kelas.Jurusan.Nama, PelajaranID: kuis.PelajaranID, PelajaranNama: kuis.Pelajaran.Nama,
+			GuruNama: kuis.Guru.Nama, Jenis: jenis, Judul: kuis.Judul, Nilai: submission.Nilai,
+			NilaiMaks: 100, Status: status, Waktu: submission.WaktuSelesai,
+		})
+	}
+
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].Waktu.After(items[j].Waktu)
+	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": items})
+}
+
 // ===================== Aktivitas guru =====================
 
 type PemantauanItem struct {

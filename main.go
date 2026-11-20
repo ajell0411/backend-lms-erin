@@ -360,6 +360,7 @@ func setupRouter() *gin.Engine {
 		pemantauan.Use(middleware.VerifyToken(), middleware.RequireRole(pantau...))
 		{
 			pemantauan.GET("/statistik", handlers.GetPemantauanStatistik)
+			pemantauan.GET("/nilai", middleware.RequireRole("admin_kurikulum", "kepala_sekolah"), handlers.ListPemantauanNilai)
 			pemantauan.GET("/aktivitas-guru", handlers.ListPemantauanAktivitasGuru)
 			pemantauan.GET("/aktivitas-guru/:jenis/:id", handlers.GetPemantauanAktivitasGuruDetail)
 		}
