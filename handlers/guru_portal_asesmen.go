@@ -401,8 +401,8 @@ func guruValidasiSoal(in *guruSoalInput) string {
 		in.Kunci = ""
 		return ""
 	}
-	if len(in.Opsi) < 2 || len(in.Opsi) > 6 {
-		return "Isi minimal 2 dan maksimal 6 opsi jawaban"
+	if len(in.Opsi) < 2 || len(in.Opsi) > 5 {
+		return "Isi minimal 2 dan maksimal 5 opsi jawaban (A-E)"
 	}
 	opsi := make([]guruOpsi, 0, len(in.Opsi))
 	for i, o := range in.Opsi {
