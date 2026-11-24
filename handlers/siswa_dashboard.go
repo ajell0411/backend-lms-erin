@@ -17,8 +17,8 @@ func GetSiswaDashboard(c *gin.Context) {
 
 	// 1. Asesmen terbaru maks 3
 	var kuisList []models.Kuis
-	config.DB.Preload("Pelajaran").Where("kelas_id = ?", *siswa.KelasID).
-		Order("created_at DESC").Limit(3).Find(&kuisList)
+	config.DB.Preload("Pelajaran").Preload("Guru").Where("kelas_id = ?", *siswa.KelasID).
+		Order("created_at DESC").Order("id DESC").Limit(3).Find(&kuisList)
 
 	asesmenItems := make([]AsesmenSiswaItem, 0, len(kuisList))
 	for _, k := range kuisList {
@@ -30,7 +30,7 @@ func GetSiswaDashboard(c *gin.Context) {
 	var tugasList []models.Tugas
 	config.DB.Preload("Pelajaran").Preload("Guru").Preload("Kelas").
 		Where("kelas_id = ?", *siswa.KelasID).
-		Order("created_at DESC").Limit(3).Find(&tugasList)
+		Order("created_at DESC").Order("id DESC").Limit(3).Find(&tugasList)
 
 	tugasItems := make([]TugasSiswaItem, 0, len(tugasList))
 	for _, t := range tugasList {
@@ -39,8 +39,8 @@ func GetSiswaDashboard(c *gin.Context) {
 
 	// 3. Materi terbaru maks 3
 	var materis []models.Materi
-	config.DB.Preload("Pelajaran").Where("kelas_id = ?", *siswa.KelasID).
-		Order("created_at DESC").Limit(3).Find(&materis)
+	config.DB.Preload("Pelajaran").Preload("Guru").Where("kelas_id = ?", *siswa.KelasID).
+		Order("created_at DESC").Order("id DESC").Limit(3).Find(&materis)
 
 	materiItems := make([]MateriSiswaItem, 0, len(materis))
 	for _, m := range materis {
