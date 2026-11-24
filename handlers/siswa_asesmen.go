@@ -42,6 +42,7 @@ type soalInternal struct {
 type AsesmenSiswaItem struct {
 	ID            uint               `json:"id"`
 	Judul         string             `json:"judul"`
+	Guru          string             `json:"guru,omitempty"`
 	Deskripsi     string             `json:"deskripsi"`
 	Tipe          string             `json:"tipe"` // "ujian_harian" | "kuis"
 	Pelajaran     PelajaranSiswaItem `json:"pelajaran"`
@@ -226,6 +227,7 @@ func getAsesmenInfo(k models.Kuis, siswaID uint) (AsesmenSiswaItem, []soalIntern
 	item := AsesmenSiswaItem{
 		ID:        k.ID,
 		Judul:     k.Judul,
+		Guru:      k.Guru.Nama,
 		Deskripsi: "Evaluasi pembelajaran untuk mengukur pemahaman materi.",
 		Tipe:      tipe,
 		Pelajaran: PelajaranSiswaItem{
@@ -277,8 +279,9 @@ func ListSiswaAsesmen(c *gin.Context) {
 		query = query.Where("jenis = ?", tipe)
 	}
 
+	query = query.Preload("Guru")
 	var kuisList []models.Kuis
-	if err := query.Order("created_at DESC").Find(&kuisList).Error; err != nil {
+	if err := query.Order("created_at DESC").Order("id DESC").Find(&kuisList).Error; err != nil {
 		sendSiswaError(c, http.StatusInternalServerError, "Gagal mengambil daftar asesmen")
 		return
 	}
@@ -300,7 +303,7 @@ func GetSiswaAsesmenByID(c *gin.Context) {
 
 	id := c.Param("id")
 	var kuis models.Kuis
-	if err := config.DB.Preload("Pelajaran").First(&kuis, id).Error; err != nil {
+	if err := config.DB.Preload("Pelajaran").Preload("Guru").First(&kuis, id).Error; err != nil {
 		sendSiswaError(c, http.StatusNotFound, "Asesmen tidak ditemukan")
 		return
 	}
