@@ -20,10 +20,11 @@ var resetPasswordRoles = map[string]bool{
 }
 
 func ListAccountsForPasswordReset(c *gin.Context) {
-	query := config.DB.Where("role IN ?", []string{"admin", "super_admin", "admin_kurikulum", "kepala_sekolah", "guru", "siswa"})
-	if c.GetString("role") != "super_admin" {
-		query = query.Where("role <> ?", "super_admin")
+	if role := c.GetString("role"); role != "admin" && role != "super_admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya admin dan super admin yang dapat mereset akun"})
+		return
 	}
+	query := config.DB.Where("role IN ?", []string{"admin", "super_admin", "admin_kurikulum", "kepala_sekolah", "guru", "siswa"})
 	var users []models.User
 	if err := query.Order("nama ASC").Find(&users).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memuat daftar akun"})
@@ -40,13 +41,14 @@ func ListAccountsForPasswordReset(c *gin.Context) {
 }
 
 func ResetAccountPassword(c *gin.Context) {
+	actorRole := c.GetString("role")
+	if actorRole != "admin" && actorRole != "super_admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya admin dan super admin yang dapat mereset akun"})
+		return
+	}
 	role := strings.TrimSpace(c.Param("role"))
 	if !resetPasswordRoles[role] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Role akun tidak valid"})
-		return
-	}
-	if role == "super_admin" && c.GetString("role") != "super_admin" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya super admin yang dapat mereset kata sandi akun super admin"})
 		return
 	}
 	id, err := strconv.ParseUint(c.Param("id"), 10, 32)
