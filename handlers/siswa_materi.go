@@ -19,7 +19,9 @@ import (
 type MateriSiswaItem struct {
 	ID        uint               `json:"id"`
 	Judul     string             `json:"judul"`
+	Guru      string             `json:"guru,omitempty"`
 	NamaFile  string             `json:"nama_file"`
+	Files     []LampiranInfo     `json:"files,omitempty"`
 	Ekstensi  string             `json:"ekstensi,omitempty"`
 	Ukuran    int64              `json:"ukuran,omitempty"`
 	CreatedAt string             `json:"created_at"`
@@ -27,7 +29,12 @@ type MateriSiswaItem struct {
 }
 
 func formatMateriItem(m models.Materi) MateriSiswaItem {
-	namaFile := filepath.Base(m.FileUrl)
+	fileURLs := guruDaftarFile(m.FileUrl)
+	firstURL := ""
+	if len(fileURLs) > 0 {
+		firstURL = fileURLs[0]
+	}
+	namaFile := filepath.Base(firstURL)
 	if namaFile == "" || namaFile == "." || namaFile == "/" || !strings.Contains(namaFile, ".") {
 		namaFile = fmt.Sprintf("%s.pdf", strings.ReplaceAll(m.Judul, "/", "-"))
 	}
@@ -37,7 +44,7 @@ func formatMateriItem(m models.Materi) MateriSiswaItem {
 	}
 
 	var ukuran int64 = 1024 * 1024 // 1 MB default estimate
-	localPath := filepath.Clean(m.FileUrl)
+	localPath := filepath.Clean(firstURL)
 	if strings.HasPrefix(localPath, "/") || strings.HasPrefix(localPath, "\\") {
 		localPath = "." + localPath
 	}
@@ -45,10 +52,23 @@ func formatMateriItem(m models.Materi) MateriSiswaItem {
 		ukuran = info.Size()
 	}
 
+	files := make([]LampiranInfo, 0, len(fileURLs))
+	for _, fileURL := range fileURLs {
+		files = append(files, LampiranInfo{Nama: guruNamaTampil(fileURL), Url: fileURL})
+	}
+	guruNama := strings.TrimSpace(m.Guru.Nama)
+	if guruNama == "" && m.GuruID > 0 {
+		var guru models.User
+		if err := config.DB.Select("nama").First(&guru, m.GuruID).Error; err == nil {
+			guruNama = strings.TrimSpace(guru.Nama)
+		}
+	}
 	return MateriSiswaItem{
 		ID:        m.ID,
 		Judul:     m.Judul,
+		Guru:      guruNama,
 		NamaFile:  namaFile,
+		Files:     files,
 		Ekstensi:  ext,
 		Ukuran:    ukuran,
 		CreatedAt: m.CreatedAt.Format(time.RFC3339),
@@ -66,7 +86,7 @@ func ListSiswaMateri(c *gin.Context) {
 		return
 	}
 
-	query := config.DB.Preload("Pelajaran").Where("kelas_id = ?", *siswa.KelasID)
+	query := config.DB.Preload("Pelajaran").Preload("Guru").Where("kelas_id = ?", *siswa.KelasID)
 
 	if search := strings.TrimSpace(c.Query("search")); search != "" {
 		like := "%" + strings.ToLower(search) + "%"
@@ -84,7 +104,7 @@ func ListSiswaMateri(c *gin.Context) {
 	}
 
 	var materis []models.Materi
-	if err := query.Order("created_at DESC").Find(&materis).Error; err != nil {
+	if err := query.Order("created_at DESC").Order("id DESC").Find(&materis).Error; err != nil {
 		sendSiswaError(c, http.StatusInternalServerError, "Gagal mengambil daftar materi")
 		return
 	}
@@ -115,7 +135,17 @@ func UnduhSiswaMateri(c *gin.Context) {
 		return
 	}
 
-	namaFile := filepath.Base(materi.FileUrl)
+	fileURLs := guruDaftarFile(materi.FileUrl)
+	index := guruAtoiUint(c.Query("index"))
+	fileURL := ""
+	if len(fileURLs) > 0 && int(index) >= len(fileURLs) {
+		sendSiswaError(c, http.StatusNotFound, "File materi tidak ditemukan")
+		return
+	}
+	if len(fileURLs) > 0 {
+		fileURL = fileURLs[index]
+	}
+	namaFile := filepath.Base(fileURL)
 	if namaFile == "" || namaFile == "." || namaFile == "/" || !strings.Contains(namaFile, ".") {
 		namaFile = fmt.Sprintf("%s.pdf", strings.ReplaceAll(materi.Judul, "/", "-"))
 	}
@@ -125,7 +155,7 @@ func UnduhSiswaMateri(c *gin.Context) {
 	c.Header("Content-Disposition", disposition)
 
 	// Cek apakah file lokal ada
-	localPath := materi.FileUrl
+	localPath := fileURL
 	if strings.HasPrefix(localPath, "/") || strings.HasPrefix(localPath, "\\") {
 		localPath = "." + localPath
 	}
