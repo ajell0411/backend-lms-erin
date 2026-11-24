@@ -283,6 +283,7 @@ func setupRouter() *gin.Engine {
 			guru.PUT("/asesmen/:id", middleware.RequireRole("guru"), handlers.UbahGuruAsesmen)
 			guru.DELETE("/asesmen/:id", middleware.RequireRole("guru"), handlers.HapusGuruAsesmen)
 			guru.POST("/asesmen/:id/soal", middleware.RequireRole("guru"), handlers.TambahGuruSoal)
+			guru.POST("/asesmen/:id/impor-word", middleware.RequireRole("guru"), handlers.ImporWordGuruSoal)
 			guru.PUT("/asesmen/:id/soal/:nomor", middleware.RequireRole("guru"), handlers.UbahGuruSoal)
 			guru.DELETE("/asesmen/:id/soal/:nomor", middleware.RequireRole("guru"), handlers.HapusGuruSoal)
 			guru.GET("/asesmen/:id/murid", middleware.RequireRole("guru"), handlers.MuridGuruAsesmen)
