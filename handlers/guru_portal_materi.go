@@ -20,6 +20,11 @@ func guruPunyaKelas(guruID, kelasID, pelajaranID uint) bool {
 }
 
 func guruMateriJSON(m models.Materi) gin.H {
+	files := guruDaftarFile(m.FileUrl)
+	firstFile := ""
+	if len(files) > 0 {
+		firstFile = files[0]
+	}
 	return gin.H{
 		"id":             m.ID,
 		"judul":          m.Judul,
@@ -28,9 +33,10 @@ func guruMateriJSON(m models.Materi) gin.H {
 		"kelas_nama":     m.Kelas.Nama,
 		"pelajaran_id":   m.PelajaranID,
 		"pelajaran_nama": m.Pelajaran.Nama,
-		"file_url":       m.FileUrl,
-		"nama_file":      guruNamaTampil(m.FileUrl),
-		"ada_file":       guruFileAda(m.FileUrl),
+		"file_url":       firstFile,
+		"nama_file":      guruNamaTampil(firstFile),
+		"ada_file":       guruFileAda(firstFile),
+		"files":          guruJSONDaftarFile(m.FileUrl),
 		"created_at":     m.CreatedAt,
 	}
 }
@@ -86,7 +92,7 @@ func TambahGuruMateri(c *gin.Context) {
 		guruPortalGagal(c, http.StatusForbidden, "Kelas ini belum ada di Kelas Saya")
 		return
 	}
-	fileURL, ada, err := guruSimpanFile(c, "file", "materi", guruEkstMateri, 50)
+	files, ada, err := guruSimpanBanyakFile(c, "files", "materi", guruEkstMateri, 50)
 	if err != nil {
 		guruPortalGagal(c, http.StatusBadRequest, err.Error())
 		return
@@ -96,11 +102,13 @@ func TambahGuruMateri(c *gin.Context) {
 		return
 	}
 	m := models.Materi{
-		Judul: judul, Deskripsi: strings.TrimSpace(c.PostForm("deskripsi")), FileUrl: fileURL,
+		Judul: judul, Deskripsi: strings.TrimSpace(c.PostForm("deskripsi")), FileUrl: guruSimpanDaftarFile(files),
 		PelajaranID: pelID, KelasID: kelasID, GuruID: guruID,
 	}
 	if err := config.DB.Create(&m).Error; err != nil {
-		guruHapusFile(fileURL)
+		for _, fileURL := range files {
+			guruHapusFile(fileURL)
+		}
 		guruPortalGagal(c, http.StatusInternalServerError, "Materi gagal disimpan")
 		return
 	}
@@ -144,20 +152,30 @@ func UbahGuruMateri(c *gin.Context) {
 		update["kelas_id"] = kelasID
 		update["pelajaran_id"] = pelID
 	}
-	fileURL, ada, err := guruSimpanFile(c, "file", "materi", guruEkstMateri, 50)
+	files, ada, err := guruSimpanBanyakFile(c, "files", "materi", guruEkstMateri, 50)
 	if err != nil {
 		guruPortalGagal(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	lama := m.FileUrl
+	lama := guruDaftarFile(m.FileUrl)
 	if ada {
-		update["file_url"] = fileURL
+		update["file_url"] = guruSimpanDaftarFile(files)
 	}
 	if len(update) > 0 {
-		config.DB.Model(&models.Materi{}).Where("id = ?", m.ID).Updates(update)
+		if err := config.DB.Model(&models.Materi{}).Where("id = ?", m.ID).Updates(update).Error; err != nil {
+			if ada {
+				for _, fileURL := range files {
+					guruHapusFile(fileURL)
+				}
+			}
+			guruPortalGagal(c, http.StatusInternalServerError, "Materi gagal diperbarui")
+			return
+		}
 	}
-	if ada && lama != "" && lama != fileURL {
-		guruHapusFile(lama)
+	if ada {
+		for _, fileURL := range lama {
+			guruHapusFile(fileURL)
+		}
 	}
 	config.DB.Preload("Kelas").Preload("Pelajaran").First(&m, m.ID)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": guruMateriJSON(m)})
@@ -173,7 +191,9 @@ func HapusGuruMateri(c *gin.Context) {
 		return
 	}
 	config.DB.Delete(&models.Materi{}, m.ID)
-	guruHapusFile(m.FileUrl)
+	for _, fileURL := range guruDaftarFile(m.FileUrl) {
+		guruHapusFile(fileURL)
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Materi dihapus"})
 }
 
@@ -186,5 +206,5 @@ func UnduhGuruMateri(c *gin.Context) {
 	if !ok {
 		return
 	}
-	guruKirimFile(c, m.FileUrl)
+	guruKirimFile(c, guruFileIndex(c, m.FileUrl))
 }
