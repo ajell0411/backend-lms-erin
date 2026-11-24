@@ -18,11 +18,12 @@ import (
 )
 
 type PengumpulanInfo struct {
-	Nilai         *int   `json:"nilai,omitempty"`
-	DikumpulkanAt string `json:"dikumpulkan_at,omitempty"`
-	NamaFile      string `json:"nama_file,omitempty"`
-	Catatan       string `json:"catatan,omitempty"`
-	Komentar      string `json:"komentar,omitempty"`
+	Nilai         *int     `json:"nilai,omitempty"`
+	DikumpulkanAt string   `json:"dikumpulkan_at,omitempty"`
+	NamaFile      string   `json:"nama_file,omitempty"`
+	Catatan       string   `json:"catatan,omitempty"`
+	Komentar      string   `json:"komentar,omitempty"`
+	Files         []string `json:"files,omitempty"`
 }
 
 type LampiranInfo struct {
@@ -31,22 +32,23 @@ type LampiranInfo struct {
 }
 
 type TugasSiswaItem struct {
-	ID          uint               `json:"id"`
-	Judul       string             `json:"judul"`
-	Pelajaran   PelajaranSiswaItem `json:"pelajaran"`
-	Tenggat     string             `json:"tenggat,omitempty"`
-	CreatedAt   string             `json:"created_at,omitempty"`
-	Status      string             `json:"status"` // "belum" | "dikumpulkan" | "dinilai" | "terlambat" | "proses" | "selesai"
-	Progres     int                `json:"progres"`
-	Nilai       *int               `json:"nilai,omitempty"`
-	Pengumpulan *PengumpulanInfo   `json:"pengumpulan,omitempty"`
-	Deskripsi   string             `json:"deskripsi,omitempty"`
-	Instruksi   string             `json:"instruksi,omitempty"`
-	Kriteria    []string           `json:"kriteria,omitempty"`
-	Guru        string             `json:"guru,omitempty"`
-	Kelas       string             `json:"kelas,omitempty"`
-	Bobot       int                `json:"bobot"`
-	Lampiran    *LampiranInfo      `json:"lampiran,omitempty"`
+	ID            uint               `json:"id"`
+	Judul         string             `json:"judul"`
+	Pelajaran     PelajaranSiswaItem `json:"pelajaran"`
+	Tenggat       string             `json:"tenggat,omitempty"`
+	CreatedAt     string             `json:"created_at,omitempty"`
+	Status        string             `json:"status"` // "belum" | "dikumpulkan" | "dinilai" | "terlambat" | "proses" | "selesai"
+	Progres       int                `json:"progres"`
+	Nilai         *int               `json:"nilai,omitempty"`
+	Pengumpulan   *PengumpulanInfo   `json:"pengumpulan,omitempty"`
+	Deskripsi     string             `json:"deskripsi,omitempty"`
+	Instruksi     string             `json:"instruksi,omitempty"`
+	Kriteria      []string           `json:"kriteria,omitempty"`
+	Guru          string             `json:"guru,omitempty"`
+	Kelas         string             `json:"kelas,omitempty"`
+	Bobot         int                `json:"bobot"`
+	Lampiran      *LampiranInfo      `json:"lampiran,omitempty"`
+	LampiranFiles []LampiranInfo     `json:"lampiran_files,omitempty"`
 }
 
 func buildTugasSiswaItem(t models.Tugas, siswaID uint) TugasSiswaItem {
@@ -90,13 +92,22 @@ func buildTugasSiswaItem(t models.Tugas, siswaID uint) TugasSiswaItem {
 			status = "dikumpulkan"
 		}
 
-		namaFile := filepath.Base(pengumpulan.FileJawabanUrl)
+		urls := guruDaftarFile(pengumpulan.FileJawabanUrl)
+		namaFile := ""
+		if len(urls) > 0 {
+			namaFile = guruNamaTampil(urls[0])
+		}
+		names := make([]string, 0, len(urls))
+		for _, fileURL := range urls {
+			names = append(names, guruNamaTampil(fileURL))
+		}
 		pInfo = &PengumpulanInfo{
 			Nilai:         pengumpulan.Nilai,
 			DikumpulkanAt: pengumpulan.WaktuSubmit.Format(time.RFC3339),
 			NamaFile:      namaFile,
 			Catatan:       catatan.Catatan,
 			Komentar:      pengumpulan.Feedback,
+			Files:         names,
 		}
 	} else {
 		if !t.Deadline.IsZero() && now.After(t.Deadline) {
@@ -107,11 +118,13 @@ func buildTugasSiswaItem(t models.Tugas, siswaID uint) TugasSiswaItem {
 	}
 
 	var lampiran *LampiranInfo
-	if t.LampiranUrl != "" {
-		lampiran = &LampiranInfo{
-			Nama: filepath.Base(t.LampiranUrl),
-			Url:  t.LampiranUrl,
-		}
+	lampiranFiles := make([]LampiranInfo, 0)
+	for _, fileURL := range guruDaftarFile(t.LampiranUrl) {
+		item := LampiranInfo{Nama: guruNamaTampil(fileURL), Url: fileURL}
+		lampiranFiles = append(lampiranFiles, item)
+	}
+	if len(lampiranFiles) > 0 {
+		lampiran = &lampiranFiles[0]
 	}
 
 	tenggatStr := ""
@@ -127,19 +140,20 @@ func buildTugasSiswaItem(t models.Tugas, siswaID uint) TugasSiswaItem {
 			Nama: t.Pelajaran.Nama,
 			Kode: t.Pelajaran.Kode,
 		},
-		Tenggat:     tenggatStr,
-		CreatedAt:   t.CreatedAt.Format(time.RFC3339),
-		Status:      status,
-		Progres:     progres,
-		Nilai:       pengumpulan.Nilai,
-		Pengumpulan: pInfo,
-		Deskripsi:   t.Deskripsi,
-		Instruksi:   instruksi,
-		Kriteria:    kriteria,
-		Guru:        t.Guru.Nama,
-		Kelas:       t.Kelas.Nama,
-		Bobot:       bobot,
-		Lampiran:    lampiran,
+		Tenggat:       tenggatStr,
+		CreatedAt:     t.CreatedAt.Format(time.RFC3339),
+		Status:        status,
+		Progres:       progres,
+		Nilai:         pengumpulan.Nilai,
+		Pengumpulan:   pInfo,
+		Deskripsi:     t.Deskripsi,
+		Instruksi:     instruksi,
+		Kriteria:      kriteria,
+		Guru:          t.Guru.Nama,
+		Kelas:         t.Kelas.Nama,
+		Bobot:         bobot,
+		Lampiran:      lampiran,
+		LampiranFiles: lampiranFiles,
 	}
 }
 
@@ -167,7 +181,7 @@ func ListSiswaTugas(c *gin.Context) {
 	}
 
 	var tugasList []models.Tugas
-	if err := query.Order("deadline ASC").Find(&tugasList).Error; err != nil {
+	if err := query.Order("created_at DESC").Order("id DESC").Find(&tugasList).Error; err != nil {
 		sendSiswaError(c, http.StatusInternalServerError, "Gagal mengambil daftar tugas")
 		return
 	}
@@ -220,6 +234,16 @@ func UnduhSiswaTugasLampiran(c *gin.Context) {
 		return
 	}
 
+	files := guruDaftarFile(tugas.LampiranUrl)
+	index := guruAtoiUint(c.Query("index"))
+	if len(files) > 0 {
+		if int(index) >= len(files) {
+			sendSiswaError(c, http.StatusNotFound, "File lampiran tidak ditemukan")
+			return
+		}
+		guruKirimFile(c, files[index])
+		return
+	}
 	namaFile := filepath.Base(tugas.LampiranUrl)
 	if namaFile == "" || namaFile == "." || namaFile == "/" || !strings.Contains(namaFile, ".") {
 		namaFile = fmt.Sprintf("lampiran-tugas-%s.pdf", id)
@@ -260,23 +284,33 @@ func KumpulkanSiswaTugas(c *gin.Context) {
 		return
 	}
 
-	// Validasi file multipart
-	fileHeader, err := c.FormFile("file")
+	form, err := c.MultipartForm()
 	if err != nil {
 		sendSiswaError(c, http.StatusBadRequest, "File tugas wajib diunggah")
 		return
 	}
-
-	// Maksimal 10 MB
-	if fileHeader.Size > 10*1024*1024 {
-		sendSiswaError(c, http.StatusBadRequest, "Ukuran file melebihi batas maksimal 10 MB")
+	fileHeaders := form.File["files"]
+	if len(fileHeaders) == 0 {
+		fileHeaders = form.File["file"]
+	}
+	if len(fileHeaders) == 0 {
+		sendSiswaError(c, http.StatusBadRequest, "Pilih minimal satu file tugas")
 		return
 	}
-
-	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
-	if ext != ".zip" && ext != ".rar" && ext != ".pdf" {
-		sendSiswaError(c, http.StatusBadRequest, "Format file tidak didukung. Hanya diperbolehkan .zip, .rar, atau .pdf")
+	if len(fileHeaders) > 20 {
+		sendSiswaError(c, http.StatusBadRequest, "Maksimal 20 file dalam satu kiriman")
 		return
+	}
+	for _, fileHeader := range fileHeaders {
+		if fileHeader.Size > 10*1024*1024 {
+			sendSiswaError(c, http.StatusBadRequest, "Ukuran setiap file maksimal 10 MB")
+			return
+		}
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		if ext != ".zip" && ext != ".rar" && ext != ".pdf" && ext != ".doc" && ext != ".docx" && ext != ".ppt" && ext != ".pptx" && ext != ".xls" && ext != ".xlsx" && ext != ".txt" && ext != ".png" && ext != ".jpg" && ext != ".jpeg" {
+			sendSiswaError(c, http.StatusBadRequest, "Format file tidak didukung")
+			return
+		}
 	}
 
 	catatan := strings.TrimSpace(c.PostForm("catatan"))
@@ -288,14 +322,26 @@ func KumpulkanSiswaTugas(c *gin.Context) {
 		return
 	}
 
-	uniqueFilename := fmt.Sprintf("tugas_%d_%d_%d%s", tugas.ID, siswa.ID, time.Now().UnixNano(), ext)
-	dst := filepath.Join(uploadDir, uniqueFilename)
-	if err := c.SaveUploadedFile(fileHeader, dst); err != nil {
-		sendSiswaError(c, http.StatusInternalServerError, "Gagal menyimpan file tugas")
-		return
+	fileUrls := make([]string, 0, len(fileHeaders))
+	for _, fileHeader := range fileHeaders {
+		ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+		base := guruNamaFileAman.ReplaceAllString(strings.TrimSuffix(filepath.Base(fileHeader.Filename), ext), "_")
+		if base == "" {
+			base = "file"
+		}
+		uniqueFilename := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), base, ext)
+		dst := filepath.Join(uploadDir, uniqueFilename)
+		if err := c.SaveUploadedFile(fileHeader, dst); err != nil {
+			for _, savedURL := range fileUrls {
+				guruHapusFile(savedURL)
+			}
+			sendSiswaError(c, http.StatusInternalServerError, "Gagal menyimpan file tugas")
+			return
+		}
+		fileUrls = append(fileUrls, fmt.Sprintf("/uploads/tugas/%s", uniqueFilename))
 	}
-
-	fileUrl := fmt.Sprintf("/uploads/tugas/%s", uniqueFilename)
+	fileUrlBytes, _ := json.Marshal(fileUrls)
+	fileUrl := string(fileUrlBytes)
 	now := time.Now()
 	isLate := !tugas.Deadline.IsZero() && now.After(tugas.Deadline)
 
@@ -304,12 +350,19 @@ func KumpulkanSiswaTugas(c *gin.Context) {
 	err = config.DB.Where("tugas_id = ? AND siswa_id = ?", tugas.ID, siswa.ID).First(&pengumpulan).Error
 	if err == nil {
 		// Update pengumpulan yang sudah ada
+		oldFileURLs := guruDaftarFile(pengumpulan.FileJawabanUrl)
 		pengumpulan.FileJawabanUrl = fileUrl
 		pengumpulan.WaktuSubmit = now
 		pengumpulan.Terlambat = isLate
 		if err := config.DB.Save(&pengumpulan).Error; err != nil {
+			for _, savedURL := range fileUrls {
+				guruHapusFile(savedURL)
+			}
 			sendSiswaError(c, http.StatusInternalServerError, "Gagal memperbarui pengumpulan tugas")
 			return
+		}
+		for _, oldURL := range oldFileURLs {
+			guruHapusFile(oldURL)
 		}
 	} else {
 		// Buat baru
@@ -322,6 +375,9 @@ func KumpulkanSiswaTugas(c *gin.Context) {
 			Terlambat:       isLate,
 		}
 		if err := config.DB.Create(&pengumpulan).Error; err != nil {
+			for _, savedURL := range fileUrls {
+				guruHapusFile(savedURL)
+			}
 			sendSiswaError(c, http.StatusInternalServerError, "Gagal menyimpan pengumpulan tugas")
 			return
 		}
