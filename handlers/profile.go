@@ -82,6 +82,20 @@ func UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Siswa tidak dapat mengubah nama atau username"})
 		return
 	}
+	canManageCredentials := user.Role == "admin" || user.Role == "super_admin"
+	if !canManageCredentials && input.Username != nil {
+		requested := normalizedUsername(input.Username)
+		current := normalizedUsername(user.Username)
+		if requested == nil || current == nil {
+			if requested != nil || current != nil {
+				c.JSON(http.StatusForbidden, gin.H{"error": "Hanya admin dan super admin yang dapat mengubah username sendiri"})
+				return
+			}
+		} else if *requested != *current {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Hanya admin dan super admin yang dapat mengubah username sendiri"})
+			return
+		}
+	}
 	if email == "" || (user.Role != "siswa" && nama == "") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Nama dan email wajib diisi"})
 		return
@@ -93,7 +107,7 @@ func UpdateProfile(c *gin.Context) {
 	updates := map[string]any{"email": email, "telepon": strings.TrimSpace(input.Telepon), "alamat": strings.TrimSpace(input.Alamat), "foto_url": strings.TrimSpace(input.FotoURL)}
 	if user.Role != "siswa" {
 		updates["nama"] = nama
-		if input.Username != nil {
+		if canManageCredentials && input.Username != nil {
 			updates["username"] = normalizedUsername(input.Username)
 		}
 	}
@@ -110,6 +124,10 @@ func UpdateProfile(c *gin.Context) {
 func UpdateProfilePassword(c *gin.Context) {
 	user, ok := currentProfile(c)
 	if !ok {
+		return
+	}
+	if user.Role != "admin" && user.Role != "super_admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Hanya admin dan super admin yang dapat mengubah kata sandi sendiri"})
 		return
 	}
 	var input profilePasswordInput
