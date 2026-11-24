@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +17,107 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// guruDaftarFile membaca format baru (JSON array) dan URL tunggal yang tersimpan lama.
+func guruDaftarFile(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+	var files []string
+	if json.Unmarshal([]byte(raw), &files) == nil && files != nil {
+		return files
+	}
+	return []string{raw}
+}
+
+func guruSimpanBanyakFile(c *gin.Context, field, sub string, ekstensi []string, maksMB int64) ([]string, bool, error) {
+	form, err := c.MultipartForm()
+	if err != nil {
+		if errors.Is(err, http.ErrNotMultipart) {
+			return nil, false, nil
+		}
+		return nil, false, errors.New("form upload tidak valid")
+	}
+	headers := form.File[field]
+	if len(headers) == 0 {
+		headers = form.File["lampiran"]
+	}
+	if len(headers) == 0 {
+		if fh, err := c.FormFile("file"); err == nil {
+			headers = []*multipart.FileHeader{fh}
+		}
+	}
+	if len(headers) == 0 {
+		return nil, false, nil
+	}
+	if len(headers) > 20 {
+		return nil, false, fmt.Errorf("maksimal 20 file dalam satu kiriman")
+	}
+	urls := make([]string, 0, len(headers))
+	for _, fh := range headers {
+		ext := strings.ToLower(filepath.Ext(fh.Filename))
+		allowed := false
+		for _, candidate := range ekstensi {
+			if candidate == ext {
+				allowed = true
+				break
+			}
+		}
+		if !allowed || fh.Size > maksMB*1024*1024 {
+			for _, saved := range urls {
+				guruHapusFile(saved)
+			}
+			if !allowed {
+				return nil, false, fmt.Errorf("format file %s tidak didukung", filepath.Base(fh.Filename))
+			}
+			return nil, false, fmt.Errorf("ukuran setiap file maksimal %d MB", maksMB)
+		}
+		dir := filepath.Join("uploads", sub)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			for _, saved := range urls {
+				guruHapusFile(saved)
+			}
+			return nil, false, err
+		}
+		base := guruNamaFileAman.ReplaceAllString(strings.TrimSuffix(filepath.Base(fh.Filename), ext), "_")
+		if base == "" {
+			base = "file"
+		}
+		name := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), base, ext)
+		if err := c.SaveUploadedFile(fh, filepath.Join(dir, name)); err != nil {
+			for _, saved := range urls {
+				guruHapusFile(saved)
+			}
+			return nil, false, err
+		}
+		urls = append(urls, "/uploads/"+sub+"/"+name)
+	}
+	return urls, true, nil
+}
+
+func guruJSONDaftarFile(raw string) []gin.H {
+	urls := guruDaftarFile(raw)
+	out := make([]gin.H, 0, len(urls))
+	for _, fileURL := range urls {
+		out = append(out, gin.H{"url": fileURL, "nama": guruNamaTampil(fileURL)})
+	}
+	return out
+}
+
+func guruSimpanDaftarFile(files []string) string {
+	data, _ := json.Marshal(files)
+	return string(data)
+}
+
+func guruFileIndex(c *gin.Context, raw string) string {
+	files := guruDaftarFile(raw)
+	index := guruAtoiUint(c.Query("index"))
+	if len(files) == 0 || int(index) >= len(files) {
+		return ""
+	}
+	return files[index]
+}
 
 var (
 	guruNamaFileAman = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
