@@ -34,6 +34,11 @@ func guruHitungTugas(t models.Tugas) (int64, int64) {
 }
 
 func guruTugasJSON(t models.Tugas, dikumpulkan, siswa int64) gin.H {
+	files := guruDaftarFile(t.LampiranUrl)
+	firstFile := ""
+	if len(files) > 0 {
+		firstFile = files[0]
+	}
 	return gin.H{
 		"id":             t.ID,
 		"judul":          t.Judul,
@@ -44,8 +49,9 @@ func guruTugasJSON(t models.Tugas, dikumpulkan, siswa int64) gin.H {
 		"kelas_nama":     t.Kelas.Nama,
 		"pelajaran_id":   t.PelajaranID,
 		"pelajaran_nama": t.Pelajaran.Nama,
-		"lampiran_url":   t.LampiranUrl,
-		"nama_lampiran":  guruNamaTampil(t.LampiranUrl),
+		"lampiran_url":   firstFile,
+		"nama_lampiran":  guruNamaTampil(firstFile),
+		"files":          guruJSONDaftarFile(t.LampiranUrl),
 		"dikumpulkan":    dikumpulkan,
 		"jumlah_siswa":   siswa,
 	}
@@ -110,17 +116,19 @@ func TambahGuruTugas(c *gin.Context) {
 		guruPortalGagal(c, http.StatusForbidden, "Kelas ini belum ada di Kelas Saya")
 		return
 	}
-	lampiran, _, err := guruSimpanFile(c, "lampiran", "tugas", guruEkstTugas, 20)
+	lampiran, _, err := guruSimpanBanyakFile(c, "files", "tugas", guruEkstTugas, 20)
 	if err != nil {
 		guruPortalGagal(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	t := models.Tugas{
-		Judul: judul, Deskripsi: strings.TrimSpace(c.PostForm("deskripsi")), LampiranUrl: lampiran,
+		Judul: judul, Deskripsi: strings.TrimSpace(c.PostForm("deskripsi")), LampiranUrl: guruSimpanDaftarFile(lampiran),
 		Deadline: deadline, PelajaranID: pelID, KelasID: kelasID, GuruID: guruID,
 	}
 	if err := config.DB.Create(&t).Error; err != nil {
-		guruHapusFile(lampiran)
+		for _, fileURL := range lampiran {
+			guruHapusFile(fileURL)
+		}
 		guruPortalGagal(c, http.StatusInternalServerError, "Tugas gagal disimpan")
 		return
 	}
@@ -210,20 +218,30 @@ func UbahGuruTugas(c *gin.Context) {
 		update["kelas_id"] = kelasID
 		update["pelajaran_id"] = pelID
 	}
-	lampiran, ada, err := guruSimpanFile(c, "lampiran", "tugas", guruEkstTugas, 20)
+	lampiran, ada, err := guruSimpanBanyakFile(c, "files", "tugas", guruEkstTugas, 20)
 	if err != nil {
 		guruPortalGagal(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	lama := t.LampiranUrl
+	lama := guruDaftarFile(t.LampiranUrl)
 	if ada {
-		update["lampiran_url"] = lampiran
+		update["lampiran_url"] = guruSimpanDaftarFile(lampiran)
 	}
 	if len(update) > 0 {
-		config.DB.Model(&models.Tugas{}).Where("id = ?", t.ID).Updates(update)
+		if err := config.DB.Model(&models.Tugas{}).Where("id = ?", t.ID).Updates(update).Error; err != nil {
+			if ada {
+				for _, fileURL := range lampiran {
+					guruHapusFile(fileURL)
+				}
+			}
+			guruPortalGagal(c, http.StatusInternalServerError, "Tugas gagal diperbarui")
+			return
+		}
 	}
-	if ada && lama != "" && lama != lampiran {
-		guruHapusFile(lama)
+	if ada {
+		for _, fileURL := range lama {
+			guruHapusFile(fileURL)
+		}
 	}
 	config.DB.Preload("Kelas").Preload("Pelajaran").First(&t, t.ID)
 	dik, sis := guruHitungTugas(t)
@@ -258,7 +276,9 @@ func HapusGuruTugas(c *gin.Context) {
 	config.DB.Where("tugas_id = ?", t.ID).Delete(&models.TugasMetadata{})
 	config.DB.Where("tugas_id = ?", t.ID).Delete(&models.SiswaPengumpulanCatatan{})
 	config.DB.Delete(&models.Tugas{}, t.ID)
-	guruHapusFile(t.LampiranUrl)
+	for _, fileURL := range guruDaftarFile(t.LampiranUrl) {
+		guruHapusFile(fileURL)
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Tugas dihapus"})
 }
 
@@ -307,7 +327,8 @@ func DetailGuruPengumpulan(c *gin.Context) {
 		"nilai":          p.Nilai,
 		"feedback":       p.Feedback,
 		"nama_file":      guruNamaTampil(p.FileJawabanUrl),
-		"ada_file":       guruFileAda(p.FileJawabanUrl),
+		"files":          guruJSONDaftarFile(p.FileJawabanUrl),
+		"ada_file":       len(guruDaftarFile(p.FileJawabanUrl)) > 0,
 	}})
 }
 
@@ -320,7 +341,7 @@ func FileGuruPengumpulan(c *gin.Context) {
 	if !ok {
 		return
 	}
-	guruKirimFile(c, p.FileJawabanUrl)
+	guruKirimFile(c, guruFileIndex(c, p.FileJawabanUrl))
 }
 
 func NilaiGuruPengumpulan(c *gin.Context) {
@@ -333,8 +354,7 @@ func NilaiGuruPengumpulan(c *gin.Context) {
 		return
 	}
 	var in struct {
-		Nilai    *int   `json:"nilai"`
-		Feedback string `json:"feedback"`
+		Nilai *int `json:"nilai"`
 	}
 	if err := c.ShouldBindJSON(&in); err != nil || in.Nilai == nil {
 		guruPortalGagal(c, http.StatusBadRequest, "Nilai wajib diisi (0-100)")
@@ -345,7 +365,7 @@ func NilaiGuruPengumpulan(c *gin.Context) {
 		return
 	}
 	config.DB.Model(&models.PengumpulanTugas{}).Where("id = ?", p.ID).Updates(map[string]interface{}{
-		"nilai": *in.Nilai, "feedback": strings.TrimSpace(in.Feedback), "status_penilaian": "dinilai",
+		"nilai": *in.Nilai, "feedback": "", "status_penilaian": "dinilai",
 	})
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Nilai disimpan", "data": gin.H{"nilai": *in.Nilai}})
 }
