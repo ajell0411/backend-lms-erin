@@ -26,6 +26,8 @@ var (
 	wordKunciSingkat  = regexp.MustCompile(`(?i)^([A-E])[\.)]?$`)
 	wordJudulKunci    = regexp.MustCompile(`(?i)^(kunci jawaban|daftar kunci jawaban)\s*:?\s*$`)
 	wordKunciBernomor = regexp.MustCompile(`(?i)^(\d+)[.)]\s*([A-E])[\.)]?$`)
+	wordPoin          = regexp.MustCompile(`(?i)^poin\s*[:=]\s*(\d+)$`)
+	wordPoinSalah     = regexp.MustCompile(`(?i)^poin\s+salah\s*[:=]\s*(\d+)$`)
 )
 
 func teksWordDocx(data []byte) (string, error) {
